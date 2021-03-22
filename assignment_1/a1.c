@@ -13,6 +13,8 @@
 #define MAX_NR_ELEMENTS 30
 #define SUCCESS 0
 #define INVALID_DIRECTORY_PATH -1
+#define INVALID_ARGUMENTS -2
+#define MISSING_DIR_PATH -3
 
 #define OP_VARIANT "variant"
 #define OP_LIST "list"
@@ -27,28 +29,42 @@ int main(int argc, char **argv){
             printf("41938\n");
         }else if(strcmp(argv[1],OP_LIST) == 0) {
            perform_op_list(argc,argv);
+
         }
     }
     return 0;
 }
 
 void perform_op_list(int nr_parameters, char ** parameters) {
-    char ** dir_elements = (char**)malloc(sizeof(char*)*MAX_NR_ELEMENTS);
+    char ** dir_elements;
     int elem_count = 0;
-    int return_value;
-    bool recursive_flag = false;
-    if(nr_parameters > 3) {
-        for(int i=2;i<nr_parameters;i++) {
-            if(strcmp(parameters[i],"recursive") == 0) {
-                recursive_flag = true;
-                break;
-            }
+    int return_value = SUCCESS;
+    bool recursive_detected = false;
+    bool path_detected = false;
+    char dir_path[MAX_PATH_SIZE];
+    if(nr_parameters < 3) {
+        return_value = INVALID_ARGUMENTS;
+        goto display_error_messages;
+    }
+    for(int i=2;i<nr_parameters;i++) {
+        if (strcmp(parameters[i], "recursive") == 0)
+            recursive_detected = true;
+        else {
+            strcpy(dir_path, strstr(parameters[i], "path=") + strlen("path="));
+            path_detected = true;
         }
     }
-    if(recursive_flag)
-        return_value = list_directory_tree(parameters[2], dir_elements, &elem_count);
+    if(!path_detected) {
+        return_value = MISSING_DIR_PATH;
+        goto display_error_messages;
+    }
+
+    dir_elements = (char**)malloc(sizeof(char*)*MAX_NR_ELEMENTS);
+
+    if(recursive_detected)
+        return_value = list_directory_tree(dir_path, dir_elements, &elem_count);
     else
-        return_value = list_directory(parameters[2], dir_elements, &elem_count);
+        return_value = list_directory(dir_path, dir_elements, &elem_count);
     if(return_value == SUCCESS) {
         printf("SUCCESS\n");
         if(elem_count > 0) {
@@ -57,12 +73,18 @@ void perform_op_list(int nr_parameters, char ** parameters) {
                 free(dir_elements[i]);
             }
         }
-        free(dir_elements);
-    }else {
+    }
+    free(dir_elements);
+
+    display_error_messages:
+    if(return_value != SUCCESS) {
         printf("ERROR\n");
-        if(return_value == INVALID_DIRECTORY_PATH) {
+        if (return_value == INVALID_DIRECTORY_PATH)
             printf("Invalid directory path\n");
-        }
+        else if (return_value == INVALID_ARGUMENTS)
+            printf(" USAGE: list [recursive] <filtering_options> path=<dir_path> \nThe order of the options is not relevant.\n");
+        else if (return_value == MISSING_DIR_PATH)
+            printf("No directory path was specified.\n");
     }
 }
 
