@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#define MAX_NAME_SIZE 30
+#define MAX_PATH_SIZE 200
 #define MAX_NR_ELEMENTS 30
 #define SUCCESS 0
 #define INVALID_DIRECTORY_PATH -1
@@ -78,9 +78,9 @@ int list_directory(char * dir_path, char ** dir_elements, int * elem_count) {
     while ((entry=readdir(dir)) != 0) {
         // exclude the .. and .
         if(strcmp(entry->d_name,".") != 0 && strcmp(entry->d_name,"..") != 0) {
-            dir_elements[*elem_count] = (char*)malloc(sizeof(char)*MAX_NAME_SIZE);
+            dir_elements[*elem_count] = (char*)malloc(sizeof(char)*MAX_PATH_SIZE);
             // create absolute path
-            snprintf(dir_elements[*elem_count], MAX_NAME_SIZE, "%s/%s", dir_path, entry->d_name);
+            snprintf(dir_elements[*elem_count], MAX_PATH_SIZE, "%s/%s", dir_path, entry->d_name);
             (*elem_count)++;
         }
 
@@ -94,7 +94,7 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count)
     DIR* dir;
     struct dirent *entry;
     struct stat inode;
-    char abs_entry_path[MAX_NAME_SIZE];
+    char abs_entry_path[MAX_PATH_SIZE];
     int return_value = SUCCESS;
     // open the directory
     dir = opendir(dir_path);
@@ -107,20 +107,20 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count)
         // exclude the .. directory
         if(strcmp(entry->d_name,"..") != 0) {
             // get the absolute path
-            snprintf(abs_entry_path, MAX_NAME_SIZE, "%s/%s", dir_path, entry->d_name);
+            snprintf(abs_entry_path, MAX_PATH_SIZE, "%s/%s", dir_path, entry->d_name);
             // get details about the entry
             lstat(abs_entry_path, &inode);
 
             if(S_ISDIR(inode.st_mode) && strcmp(entry->d_name,".") != 0) { // avoid infinite loops
                 // if it is a directory, then lists its contents too
-                int return_value_sub_fct = list_directory(abs_entry_path,dir_elements,elem_count);
+                int return_value_sub_fct = list_directory_tree(abs_entry_path,dir_elements,elem_count);
                 if(return_value_sub_fct != SUCCESS) {
                     return_value = return_value_sub_fct;
                     goto clean_up;
                 }
             }else if(S_ISREG(inode.st_mode)) {
                 // if it is a file just add it to the list
-                dir_elements[*elem_count] = (char*)malloc(sizeof(char)*MAX_NAME_SIZE);
+                dir_elements[*elem_count] = (char*)malloc(sizeof(char)*MAX_PATH_SIZE);
                 strcpy(dir_elements[*elem_count],abs_entry_path);
                 (*elem_count)++;
             }
