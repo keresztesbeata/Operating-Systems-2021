@@ -10,7 +10,9 @@
 #include <stdbool.h>
 
 #define MAX_PATH_SIZE 200
+#define MAX_NAME_SIZE 30
 #define MAX_NR_ELEMENTS 30
+
 #define SUCCESS 0
 #define INVALID_DIRECTORY_PATH -1
 #define INVALID_ARGUMENTS -2
@@ -19,8 +21,10 @@
 #define OP_VARIANT "variant"
 #define OP_LIST "list"
 
-int list_directory(char * dir_path, char ** dir_elements, int * elem_count);
-int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count);
+typedef enum _filter{UNSET,SUFFIX,PERMISSIONS} Filter;
+
+int list_directory(char * dir_path, char ** dir_elements, int * elem_count, char ** filters, Filter * filter_types);
+int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count, char ** filter, Filter * filter_types);
 void perform_op_list(int nr_parameters, char ** parameters);
 
 int main(int argc, char **argv){
@@ -39,9 +43,14 @@ void perform_op_list(int nr_parameters, char ** parameters) {
     char ** dir_elements;
     int elem_count = 0;
     int return_value = SUCCESS;
+
     bool recursive_detected = false;
     bool path_detected = false;
+
     char dir_path[MAX_PATH_SIZE];
+    Filter filter[2] = {UNSET,UNSET};
+    char filters[2][MAX_NAME_SIZE];
+
     if(nr_parameters < 3) {
         return_value = INVALID_ARGUMENTS;
         goto display_error_messages;
@@ -50,8 +59,22 @@ void perform_op_list(int nr_parameters, char ** parameters) {
         if (strcmp(parameters[i], "recursive") == 0)
             recursive_detected = true;
         else {
-            strcpy(dir_path, strstr(parameters[i], "path=") + strlen("path="));
-            path_detected = true;
+            char * filter_option = strtok(parameters[i],"=");
+            char * filter_value = parameters[i] + strlen(filter_option) + 1;
+            printf("filter = %s, value = %s\n",filter_option,filter_value);
+            if(strcmp(filter_option,"path") == 0) {
+                // detected path argument
+                strcpy(dir_path,filter_value);
+                path_detected = true;
+            }else if(strcmp(filter_option,"name_ends_with") == 0) {
+                // detected filter option for suffix
+                strcpy(filters[0],filter_value);
+                filter[0]=SUFFIX;
+            }else if(strcmp(filter_option,"permissions") == 0) {
+                // detected filter option for permission
+                strcpy(filters[1],filter_value);
+                filter[1]=PERMISSIONS;
+            }
         }
     }
     if(!path_detected) {
@@ -65,6 +88,7 @@ void perform_op_list(int nr_parameters, char ** parameters) {
         return_value = list_directory_tree(dir_path, dir_elements, &elem_count);
     else
         return_value = list_directory(dir_path, dir_elements, &elem_count);
+
     if(return_value == SUCCESS) {
         printf("SUCCESS\n");
         if(elem_count > 0) {
@@ -88,7 +112,7 @@ void perform_op_list(int nr_parameters, char ** parameters) {
     }
 }
 
-int list_directory(char * dir_path, char ** dir_elements, int * elem_count) {
+int list_directory(char * dir_path, char ** dir_elements, int * elem_count,  char ** filters, Filter * filter_types){
     DIR* dir;
     struct dirent *entry;
     // open the directory
@@ -112,7 +136,7 @@ int list_directory(char * dir_path, char ** dir_elements, int * elem_count) {
     return SUCCESS;
 }
 
-int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count) {
+int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count,  char ** filters, Filter * filter_types){
     DIR* dir;
     struct dirent *entry;
     struct stat inode;
