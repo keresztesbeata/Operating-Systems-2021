@@ -48,7 +48,7 @@ void perform_op_list(int nr_parameters, char ** parameters) {
     bool path_detected = false;
 
     char dir_path[MAX_PATH_SIZE];
-    Filter filter[2] = {UNSET,UNSET};
+    Filter filter_types[2] = {UNSET,UNSET};
     char filters[2][MAX_NAME_SIZE];
 
     if(nr_parameters < 3) {
@@ -69,11 +69,11 @@ void perform_op_list(int nr_parameters, char ** parameters) {
             }else if(strcmp(filter_option,"name_ends_with") == 0) {
                 // detected filter option for suffix
                 strcpy(filters[0],filter_value);
-                filter[0]=SUFFIX;
+                filter_types[0]=SUFFIX;
             }else if(strcmp(filter_option,"permissions") == 0) {
                 // detected filter option for permission
                 strcpy(filters[1],filter_value);
-                filter[1]=PERMISSIONS;
+                filter_types[1]=PERMISSIONS;
             }
         }
     }
@@ -85,9 +85,9 @@ void perform_op_list(int nr_parameters, char ** parameters) {
     dir_elements = (char**)malloc(sizeof(char*)*MAX_NR_ELEMENTS);
 
     if(recursive_detected)
-        return_value = list_directory_tree(dir_path, dir_elements, &elem_count);
+        return_value = list_directory_tree(dir_path, dir_elements, &elem_count,filters,filter_types);
     else
-        return_value = list_directory(dir_path, dir_elements, &elem_count);
+        return_value = list_directory(dir_path, dir_elements, &elem_count,filters,filter_types);
 
     if(return_value == SUCCESS) {
         printf("SUCCESS\n");
@@ -159,7 +159,7 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count,
 
             if(S_ISDIR(inode.st_mode) && strcmp(entry->d_name,".") != 0) { // avoid infinite loops
                 // if it is a directory, then lists its contents too
-                int return_value_sub_fct = list_directory_tree(abs_entry_path,dir_elements,elem_count);
+                int return_value_sub_fct = list_directory_tree(abs_entry_path,dir_elements,elem_count,filters,filter_types);
                 if(return_value_sub_fct != SUCCESS) {
                     return_value = return_value_sub_fct;
                     goto clean_up;
