@@ -30,6 +30,7 @@ struct parameters{
 int list_directory(char * dir_path, char ** dir_elements, int * elem_count, char * suffix, char * permission, struct parameters detected);
 int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count, char * suffix, char * permission, struct parameters detected);
 void perform_op_list(int nr_parameters, char ** parameters);
+unsigned convert_permission_format(const char * permission);
 
 int main(int argc, char **argv){
     if(argc >= 2){
@@ -118,6 +119,8 @@ void perform_op_list(int nr_parameters, char ** parameters) {
 int list_directory(char * dir_path, char ** dir_elements, int * elem_count,  char * suffix, char * permission,struct parameters detected){
     DIR* dir;
     struct dirent *entry;
+    struct stat inode;
+    char abs_entry_path[MAX_PATH_SIZE];
     // open the directory
     dir = opendir(dir_path);
     if(dir == 0) {
@@ -128,13 +131,30 @@ int list_directory(char * dir_path, char ** dir_elements, int * elem_count,  cha
     while ((entry=readdir(dir)) != 0) {
         // exclude the .. and .
         if(strcmp(entry->d_name,".") != 0 && strcmp(entry->d_name,"..") != 0) {
-            // if the suffix filter is set and the file's name matches the suffix, then add it to the list, otherwise go to next element
-            if(detected.suffix && !(strstr(entry->d_name,suffix) && (strstr(entry->d_name,suffix) + strlen(suffix) == entry->d_name + strlen(entry->d_name))))
-                    continue;
-            dir_elements[*elem_count] = (char*)malloc(sizeof(char)*MAX_PATH_SIZE);
-            // create absolute path
-            snprintf(dir_elements[*elem_count], MAX_PATH_SIZE, "%s/%s", dir_path, entry->d_name);
-            (*elem_count)++;
+            // get the absolute path
+            snprintf(abs_entry_path, MAX_PATH_SIZE, "%s/%s", dir_path, entry->d_name);
+            // get details about the entry
+            lstat(abs_entry_path, &inode);
+
+            bool condition = true;
+            // check suffix
+            if(detected.suffix)
+                condition = strstr(entry->d_name,suffix) && (strstr(entry->d_name,suffix) + strlen(suffix) == entry->d_name + strlen(entry->d_name));
+
+            // check permission rights
+            if(detected.permission) {
+                unsigned permission_binary_format = convert_permission_format(permission);
+                condition = (inode.st_mode & permission_binary_format) == permission_binary_format;
+            }
+
+            // add element to the list if the required conditions are met
+            if(condition) {
+                dir_elements[*elem_count] = (char*)malloc(sizeof(char)*MAX_PATH_SIZE);
+                // create absolute path
+                snprintf(dir_elements[*elem_count], MAX_PATH_SIZE, "%s/%s", dir_path, entry->d_name);
+                (*elem_count)++;
+            }
+
         }
 
     }
@@ -143,6 +163,19 @@ int list_directory(char * dir_path, char ** dir_elements, int * elem_count,  cha
     return SUCCESS;
 }
 
+
+unsigned convert_permission_format(const char * permission) {
+    //generate permission bits
+    unsigned p_rights = 0;
+    unsigned bit = 1;
+    for(int i=8;i>=0;i--) {
+        if(permission[i] != '-') {
+            p_rights = p_rights | bit;
+        }
+        bit = bit << 1u;
+    }
+    return p_rights;
+}
 int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count, char * suffix, char * permission,struct parameters detected){
     DIR* dir;
     struct dirent *entry;
@@ -158,20 +191,31 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count,
     // iterate through the directory's content
     while ((entry=readdir(dir)) != 0) {
         // exclude the .. directory
-        if(strcmp(entry->d_name,"..") != 0) {
+        if(strcmp(entry->d_name,"..") != 0 && strcmp(entry->d_name,".") != 0) {
             // get the absolute path
             snprintf(abs_entry_path, MAX_PATH_SIZE, "%s/%s", dir_path, entry->d_name);
             // get details about the entry
             lstat(abs_entry_path, &inode);
 
-            if(S_ISDIR(inode.st_mode) && strcmp(entry->d_name,".") != 0) { // avoid infinite loops
-                // is suffix filter is set and the directory's name matches the suffix, then add it to the list
-                if(detected.suffix && (strstr(entry->d_name,suffix) && (strstr(entry->d_name,suffix) + strlen(suffix) == entry->d_name + strlen(entry->d_name)))) {
-                    dir_elements[*elem_count] = (char*)malloc(sizeof(char)*MAX_PATH_SIZE);
-                    strcpy(dir_elements[*elem_count],abs_entry_path);
-                    (*elem_count)++;
-                }else {
-                    // otherwise, if the suffix is not set or it doesn't match, recursive on the sub-directory's elements
+            bool condition = true;
+            // check suffix
+            if(detected.suffix)
+                condition = strstr(entry->d_name,suffix) && (strstr(entry->d_name,suffix) + strlen(suffix) == entry->d_name + strlen(entry->d_name));
+
+            // check permission rights
+            if(detected.permission) {
+                unsigned permission_binary_format = convert_permission_format(permission);
+                condition = (inode.st_mode & permission_binary_format) == permission_binary_format;
+            }
+
+            // add element to the list if the required conditions are met
+            if(condition) {
+                dir_elements[*elem_count] = (char *) malloc(sizeof(char) * MAX_PATH_SIZE);
+                strcpy(dir_elements[*elem_count], abs_entry_path);
+                (*elem_count)++;
+            }
+
+            if(S_ISDIR(inode.st_mode)) {
                     // if it is a directory, then lists its contents too
                     int return_value_sub_fct = list_directory_tree(abs_entry_path, dir_elements, elem_count, suffix,
                                                                    permission, detected);
@@ -180,16 +224,7 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count,
                         goto clean_up;
                     }
                 }
-            }else if(S_ISREG(inode.st_mode) || S_ISLNK(inode.st_mode)) {
-                // if the suffix filter is set and the file's name matches the suffix, then add it to the list, otherwise go to next element
-                if(detected.suffix && !(strstr(entry->d_name,suffix) && (strstr(entry->d_name,suffix) + strlen(suffix) == entry->d_name + strlen(entry->d_name))))
-                    continue;
-                // if it is a file or a link to a file just add it to the list
-                dir_elements[*elem_count] = (char*)malloc(sizeof(char)*MAX_PATH_SIZE);
-                strcpy(dir_elements[*elem_count],abs_entry_path);
-                (*elem_count)++;
             }
-        }
 
     }
     clean_up:
