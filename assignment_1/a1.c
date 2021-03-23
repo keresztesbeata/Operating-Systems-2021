@@ -48,8 +48,15 @@ void perform_op_list(int nr_parameters, char ** parameters) {
     bool path_detected = false;
 
     char dir_path[MAX_PATH_SIZE];
-    Filter filter_types[2] = {UNSET,UNSET};
-    char filters[2][MAX_NAME_SIZE];
+    int nr_filters = 2;
+    Filter * filter_types = (Filter*)malloc(sizeof(Filter)*nr_filters);
+    for(int i=0;i<nr_filters;i++) {
+        filter_types[i] = UNSET;
+    }
+    char ** filters = (char**)malloc(sizeof(char*)*nr_filters);
+    for(int i=0;i<nr_filters;i++) {
+        filters[i] = (char*)malloc(sizeof(char)*MAX_NAME_SIZE);
+    }
 
     if(nr_parameters < 3) {
         return_value = INVALID_ARGUMENTS;
@@ -110,6 +117,13 @@ void perform_op_list(int nr_parameters, char ** parameters) {
         else if (return_value == MISSING_DIR_PATH)
             printf("No directory path was specified.\n");
     }
+
+
+    free(filter_types);
+    for(int i=0;i<nr_filters;i++) {
+        free(filters[i]);
+    }
+    free(filters);
 }
 
 int list_directory(char * dir_path, char ** dir_elements, int * elem_count,  char ** filters, Filter * filter_types){
