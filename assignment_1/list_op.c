@@ -47,10 +47,7 @@ void perform_op_list(int nr_parameters, char ** parameters) {
 
     dir_elements = (char**)malloc(sizeof(char*)*MAX_NR_ELEMENTS);
 
-    if(detected.recursive)
-        return_value = list_directory_tree(dir_path, dir_elements, &elem_count,suffix,permission,detected);
-    else
-        return_value = list_directory(dir_path, dir_elements, &elem_count,suffix,permission,detected);
+    return_value = list_directory_tree(dir_path, dir_elements, &elem_count,suffix,permission,detected);
 
     if(return_value == SUCCESS) {
         printf("SUCCESS\n");
@@ -76,53 +73,6 @@ void perform_op_list(int nr_parameters, char ** parameters) {
 
 }
 
-int list_directory(char * dir_path, char ** dir_elements, int * elem_count,  char * suffix, char * permission,struct parameters detected){
-    DIR* dir;
-    struct dirent *entry;
-    struct stat inode;
-    char abs_entry_path[MAX_PATH_SIZE];
-    // open the directory
-    dir = opendir(dir_path);
-    if(dir == 0) {
-        return INVALID_DIRECTORY_PATH;
-    }
-
-    // iterate through the directory's content
-    while ((entry=readdir(dir)) != 0) {
-        // exclude the .. and .
-        if(strcmp(entry->d_name,".") != 0 && strcmp(entry->d_name,"..") != 0) {
-            // get the absolute path
-            snprintf(abs_entry_path, MAX_PATH_SIZE, "%s/%s", dir_path, entry->d_name);
-            // get details about the entry
-            lstat(abs_entry_path, &inode);
-
-            bool condition = true;
-            // check suffix
-            if(detected.suffix)
-                condition = strstr(entry->d_name,suffix) && (strstr(entry->d_name,suffix) + strlen(suffix) == entry->d_name + strlen(entry->d_name));
-
-            // check permission rights
-            if(detected.permission) {
-                unsigned permission_binary_format = convert_permission_format(permission);
-                condition = (inode.st_mode & permission_binary_format) == permission_binary_format;
-            }
-
-            // add element to the list if the required conditions are met
-            if(condition) {
-                dir_elements[*elem_count] = (char*)malloc(sizeof(char)*MAX_PATH_SIZE);
-                strcpy(dir_elements[*elem_count], abs_entry_path);
-                (*elem_count)++;
-            }
-
-        }
-
-    }
-    // close the directory
-    closedir(dir);
-    return SUCCESS;
-}
-
-
 unsigned convert_permission_format(const char * permission) {
     //generate permission bits
     unsigned p_rights = 0;
@@ -135,6 +85,7 @@ unsigned convert_permission_format(const char * permission) {
     }
     return p_rights;
 }
+
 int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count, char * suffix, char * permission,struct parameters detected){
     DIR* dir;
     struct dirent *entry;
@@ -174,7 +125,7 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count,
                 (*elem_count)++;
             }
 
-            if(S_ISDIR(inode.st_mode)) {
+            if(detected.recursive && S_ISDIR(inode.st_mode)) {
                 // if it is a directory, then lists its contents too
                 int return_value_sub_fct = list_directory_tree(abs_entry_path, dir_elements, elem_count, suffix,
                                                                permission, detected);
