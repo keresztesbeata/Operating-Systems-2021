@@ -5,6 +5,7 @@
 
 #define OP_VARIANT "variant"
 #define OP_LIST "list"
+#define OP_PARSE "parse"
 
 
 int main(int argc, char **argv){
