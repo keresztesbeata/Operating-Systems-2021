@@ -13,26 +13,27 @@
 #define OP_LIST "list"
 #define OP_PARSE "parse"
 
-#define MAGIC_FIELD "MAGIC"
+const int line_ending =  0x0A;
+const char magic_field[] = "1A4P";
+const int sect_types[] = {19, 10, 58, 57, 11, 53};
 
 #define MAX_PATH_SIZE 300
 #define MAX_NAME_SIZE 30
-#define MAX_BUF_SIZE 300
 #define MAX_NR_ELEMENTS 100
 
 #define SUCCESS 0
 #define INVALID_PATH -1
 #define INVALID_ARGUMENTS -2
 #define MISSING_PATH -3
-#define  ERR_READING_FILE -4
+#define ERR_READING_FILE -4
+#define INVALID_LINE_ENDING -5
 
 struct section_header{
     char sect_name[21];
-    char sect_type[6];
+    int sect_type;
     int sect_offset;
     int sect_size;
 };
-
 
 struct header{
     char magic[6];
@@ -41,7 +42,6 @@ struct header{
     int no_of_sections;
     struct section_header * section_headers;
 };
-
 
 // command line parameters
 struct list_op_parameters{
@@ -55,12 +55,19 @@ struct parse_op_parameters{
     bool path;
 };
 
+struct valid_header_fields{
+    bool magic;
+    bool section_type;
+    bool version;
+    bool nr_sections;
+};
+
 // list the directory's content
 int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count, char * suffix, char * permission, struct list_op_parameters detected);
 void perform_op_list(int nr_parameters, char ** parameters);
 unsigned convert_permission_format(const char * permission);
 // parse files
-int parse_file_header(int fd, struct header * sf_header);
+int parse_file_header(int fd, struct header * sf_header, struct valid_header_fields * valid);
 void perform_op_parse(int nr_parameters, char ** parameters);
 
 
@@ -219,44 +226,76 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count,
     return return_value;
 }
 
-int read_line(int fd, char * line, int * length) {
-    int index = 0;
-    char ch;
-    while((index < MAX_BUF_SIZE) && (read(fd,&ch,1) > 0) && (ch != '\n')) {
-        line[index] = ch;
-        index++;
-    }
-    line[index]='\0';
-    *length = index;
-    return 0;
-}
+int parse_file_header(int fd, struct header * sf_header, struct valid_header_fields * valid) {
+    int return_value = SUCCESS;
 
-int parse_file_header(int fd, struct header * sf_header) {
-    int pos = lseek(fd,0,SEEK_SET);
-    if(pos != 0) {
-        return -1;
+    int read_magic_nr_bytes = 0;
+    int read_header_size_nr_bytes = 0;
+    int read_version_nr_bytes = 0;
+    int read_no_of_sections_nr_bytes = 0;
+
+    read_magic_nr_bytes = read(fd,sf_header->magic,4);
+    sf_header->magic[4] = '\0';
+    read_header_size_nr_bytes = read(fd,&sf_header->header_size,2);
+    read_version_nr_bytes = read(fd,&sf_header->version,2);
+    read_no_of_sections_nr_bytes = read(fd,&sf_header->no_of_sections,1);
+
+    if(read_magic_nr_bytes < 0 || read_header_size_nr_bytes < 0 || read_version_nr_bytes < 0 || read_no_of_sections_nr_bytes < 0) {
+        return_value = ERR_READING_FILE;
+        goto finish;
     }
-    read(fd,sf_header->magic,4);
-    sf_header->magic[4]='\0';
-    read(fd,&sf_header->header_size,2);
-    read(fd,&sf_header->version,2);
-    read(fd,&sf_header->no_of_sections,1);
+    // check if magic field is valid
+    if (strcmp(sf_header->magic, magic_field) == 0) {
+        valid->magic = true;
+    }
+    // check if version is valid
+    if (sf_header->version >= 47 && sf_header->version <= 128) {
+        valid->version = true;
+    }
+    // check if the number of sections is in a valid range
+    if (sf_header->no_of_sections >= 3 && sf_header->no_of_sections <= 17) {
+        valid->nr_sections = true;
+    }
+
     sf_header->section_headers = (struct section_header*)malloc(sizeof(struct section_header)*sf_header->no_of_sections);
+
+    int read_sect_name_nr_bytes = 0;
+    int read_sect_type_nr_bytes = 0;
+    int read_sect_offset_nr_bytes = 0;
+    int read_sect_size_nr_bytes = 0;
+
+    valid->section_type = true;
+
     for(int i=0;i<sf_header->no_of_sections;i++) {
-        read(fd,&sf_header->section_headers[i].sect_name,19);
+        read_sect_name_nr_bytes = read(fd,&sf_header->section_headers[i].sect_name,19);
         sf_header->section_headers[i].sect_name[20] = '\0';
-        read(fd,&sf_header->section_headers[i].sect_type,4);
-        sf_header->section_headers[i].sect_type[4] = '\0';
-        read(fd,&sf_header->section_headers[i].sect_offset,4);
-        read(fd,&sf_header->section_headers[i].sect_size,4);
-        char ch[3];
-        read(fd,&ch,2);
-        ch[2]='\0';
-        if(ch[0] == (char)0x0 && ch[1] == (char)0xA) {
-            printf("found line ending\n");
+        read_sect_type_nr_bytes = read(fd,&sf_header->section_headers[i].sect_type,4);
+        read_sect_offset_nr_bytes = read(fd,&sf_header->section_headers[i].sect_offset,4);
+        read_sect_size_nr_bytes = read(fd,&sf_header->section_headers[i].sect_size,4);
+
+        if(read_sect_size_nr_bytes < 0 || read_sect_offset_nr_bytes < 0 || read_sect_type_nr_bytes < 0 || read_sect_name_nr_bytes < 0) {
+            return_value = ERR_READING_FILE;
+            goto finish;
+        }
+        // check if the section type is valid
+        bool valid_type = false;
+        for(int j=0;j<sizeof(sect_types);j++) {
+            if(sf_header->section_headers[i].sect_type == sect_types[j]) {
+                valid_type = true;
+            }
+        }
+        if(!valid_type) {
+            valid->section_type = false;
+        }
+        int line_ending_hx;
+        read(fd,&line_ending_hx,2);
+        if(line_ending_hx != line_ending) {
+            return_value = INVALID_LINE_ENDING;
+            goto finish;
         }
     }
-    return SUCCESS;
+    finish:
+    return return_value;
 }
 
 
@@ -304,13 +343,14 @@ void perform_op_parse(int nr_parameters, char ** parameters){
     write(fd,&nr_sections,1);
     for(int i=0;i<nr_sections;i++) {
         write(fd, "nothing else matters",19);
-        write(fd,"type",4);
+        int type = 19;
+        write(fd,&type,4);
         int offset = 0x0100;
         write(fd,&offset,4);
         int size = 20;
         write(fd,&size,4);
-        int line_ending = 0x0A;
-        write(fd,&line_ending,2);
+        int line_ending_hx = 0x0A;
+        write(fd,&line_ending_hx,2);
     }
 
     if(fd > 0) {
@@ -322,22 +362,23 @@ void perform_op_parse(int nr_parameters, char ** parameters){
         return_value = INVALID_PATH;
         goto display_error_messages;
     }
+
+    struct valid_header_fields valid = {.magic = false, .section_type = false, .version = false, .nr_sections = false};
+
     // parse file's header
-    return_value = parse_file_header(fd,sf_header);
+    return_value = parse_file_header(fd,sf_header,&valid);
 
     printf("magic = %s\n",sf_header->magic);
     printf("header_size = %d\n",sf_header->header_size);
     printf("version = %d\n",sf_header->version);
     printf("nr_sections = %d\n",sf_header->no_of_sections);
     for(int i=0;i<sf_header->no_of_sections;i++) {
-        printf("section[%d] :\n-name = %s\n-type = %s\n-offset = %x\n-size = %d\n",i,
+        printf("section[%d] :\n-name = %s\n-type = %d\n-offset = %x\n-size = %d\n",i,
                sf_header->section_headers[i].sect_name,
                sf_header->section_headers[i].sect_type,
                sf_header->section_headers[i].sect_offset,
                sf_header->section_headers[i].sect_size);
-
     }
-
 
     display_error_messages:
     if(return_value != SUCCESS) {
@@ -350,5 +391,8 @@ void perform_op_parse(int nr_parameters, char ** parameters){
             printf("No file path was specified.\n");
         else if (return_value == ERR_READING_FILE)
             printf("Error reading from file.\n");
+        else if (return_value == INVALID_LINE_ENDING) {
+            printf("Invalid line ending.\n");
+        }
     }
 }
