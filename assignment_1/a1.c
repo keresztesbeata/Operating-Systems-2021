@@ -27,6 +27,7 @@ const int sect_types[] = {19, 10, 58, 57, 11, 53};
 #define MISSING_PATH -3
 #define ERR_READING_FILE -4
 #define INVALID_LINE_ENDING -5
+#define INVALID_FILE_FORMAT -6
 
 struct section_header{
     char sect_name[21];
@@ -294,6 +295,9 @@ int parse_file_header(int fd, struct header * sf_header, struct valid_header_fie
             goto finish;
         }
     }
+    if(!valid->magic || !valid->section_type || !valid->nr_sections || !valid->version) {
+        return_value = INVALID_FILE_FORMAT;
+    }
     finish:
     return return_value;
 }
@@ -334,7 +338,7 @@ void perform_op_parse(int nr_parameters, char ** parameters){
         goto display_error_messages;
     }
 
-    write(fd,"1A4P",4);
+    write(fd,magic_field,4);
     int header_size = 200;
     write(fd,&header_size,2);
     int version = 47;
@@ -349,7 +353,7 @@ void perform_op_parse(int nr_parameters, char ** parameters){
         write(fd,&offset,4);
         int size = 20;
         write(fd,&size,4);
-        int line_ending_hx = 0x0A;
+        int line_ending_hx = line_ending;
         write(fd,&line_ending_hx,2);
     }
 
@@ -391,8 +395,19 @@ void perform_op_parse(int nr_parameters, char ** parameters){
             printf("No file path was specified.\n");
         else if (return_value == ERR_READING_FILE)
             printf("Error reading from file.\n");
-        else if (return_value == INVALID_LINE_ENDING) {
+        else if (return_value == INVALID_LINE_ENDING)
             printf("Invalid line ending.\n");
+        else if(return_value == INVALID_FILE_FORMAT){
+            printf("wrong ");
+            if(!valid.magic)
+                printf("magic|");
+            if(!valid.version)
+                printf("version|");
+            if(!valid.nr_sections)
+                printf("sect_nr|");
+            if(!valid.section_type)
+                printf("sect_types|");
+            printf("\n");
         }
     }
 }
