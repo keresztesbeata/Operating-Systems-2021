@@ -167,7 +167,6 @@ unsigned convert_permission_format(const char * permission) {
     }
     return p_rights;
 }
-
 int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count, char * suffix, char * permission,struct list_op_parameters detected){
     DIR* dir;
     struct dirent *entry;
