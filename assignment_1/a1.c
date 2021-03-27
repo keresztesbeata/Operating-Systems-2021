@@ -82,6 +82,9 @@ void perform_op_parse(int nr_parameters, char ** parameters);
 // extract lines
 int extract_line(int fd, struct header * sf_header, int section_nr, int line_nr, char * line_buf,struct extract_op_parameters * valid);
 void perform_op_extract(int nr_parameters, char ** parameters);
+// filter lines
+int filter_line(int fd, struct header * sf_header, int section_nr, int line_nr, char * line_buf,struct extract_op_parameters * valid);
+void perform_op_filter(int nr_parameters, char ** parameters);
 
 int main(int argc, char **argv){
     if(argc >= 2){
@@ -93,6 +96,8 @@ int main(int argc, char **argv){
             perform_op_parse(argc,argv);
         }else if(strcmp(argv[1],OP_EXTRACT) == 0) {
             perform_op_extract(argc,argv);
+        }else if(strcmp(argv[1],OP_FILTER) == 0) {
+            perform_op_filter(argc,argv);
         }
     }
     return 0;
@@ -384,7 +389,7 @@ void perform_op_parse(int nr_parameters, char ** parameters){
         write(fd,&line_ending_hx,2);
     }
 
-    write(fd,"sfgasf\nsdfh\nnsfyas\nasdfguysa\nsdf",30);
+    write(fd,"sfgasdfhgdsfghbsf\nsdsdffgfh\nnsdfgsfyas\nasdfsgguysa\nsdfsdfgsdfgsdfgdsgdsg",30);
 
     if(fd > 0) {
         close(fd);
@@ -457,31 +462,136 @@ int extract_line(int fd, struct header * sf_header, int section_nr, int line_nr,
 
     int line_count = 1;
     int ch_count = 0;
+    int buf_idx=0;
     char ch;
     int read_return_value;
-    while((read_return_value = read(fd,&ch,1)) > 0) {
+    int max_ch_count = sf_header->section_headers[section_nr-1].sect_size;
+    while(ch_count < max_ch_count && ((read_return_value = read(fd,&ch,1)) > 0)) {
         if(ch == '\n') {
             line_count++;
         }else if(line_count == line_nr) {
-            line_buf[ch_count] = ch;
-            ch_count++;
+            line_buf[buf_idx] = ch;
+            buf_idx++;
         }
+        ch_count++;
     }
     if(read_return_value == -1) {
         return_value = ERR_READING_FILE;
         goto finish;
     }
-    if(ch_count == 0) {
+    printf("ch_count=%d,max_count=%d\n",ch_count,max_ch_count);
+    if(ch_count >= max_ch_count && line_count < line_nr) {
         return_value = ERR_INVALID_ARGUMENTS;
         goto finish;
     }
-    line_buf[ch_count]='\0';
+    line_buf[buf_idx]='\0';
     valid->line = true;
 
     finish:
     return return_value;
 }
 void perform_op_extract(int nr_parameters, char ** parameters) {
+    int return_value = SUCCESS;
+
+    struct header sf_header;
+    int fd;
+    char file_path[MAX_PATH_SIZE+1];
+    int section_nr;
+    int line_nr;
+    struct extract_op_parameters valid = {.path = false,.file = false,.section = false,.line=false};
+    struct extract_op_parameters detected = {.path = false,.file = false,.section = false,.line=false};
+
+    if(nr_parameters < 5) {
+        return_value = ERR_MISSING_ARGUMENTS;
+        goto display_error_messages;
+    }
+
+    for(int i=2;i<nr_parameters;i++) {
+        char * filter_option = strtok(parameters[i],"=");
+        char * filter_value = parameters[i] + strlen(filter_option) + 1;
+        if(strcmp(filter_option,"path") == 0) {
+            // present path argument
+            strcpy(file_path,filter_value);
+            detected.path = true;
+        }else if(strcmp(filter_option,"section") == 0) {
+            // present section nr argument
+            section_nr = strtoul(filter_value,NULL,10);
+            detected.section = true;
+        }else if(strcmp(filter_option,"line") == 0) {
+            // present line nr argument
+            line_nr = strtoul(filter_value,NULL,10);
+            detected.line = true;
+        }
+    }
+    if(!detected.path || !detected.section || !detected.line) {
+        return_value = ERR_MISSING_ARGUMENTS;
+        goto display_error_messages;
+    }
+
+    fd = open(file_path,O_RDONLY);
+    if(fd < 0) {
+        return_value = ERR_INVALID_PATH;
+        goto display_error_messages;
+    }
+
+    struct valid_header_fields valid_header = {.magic = false, .section_type = false, .version = false, .nr_sections = false};
+
+    // parse file's header
+    return_value = parse_file_header(fd,&sf_header,&valid_header);
+    if(return_value == SUCCESS) {
+        valid.file = true;
+    }else {
+        valid.file = valid_header.magic && valid_header.section_type && valid_header.version && valid_header.nr_sections;
+        goto display_error_messages;
+    }
+
+    // get size of file
+    int file_size = lseek(fd,0,SEEK_END);
+    if(file_size > 0 && sf_header.section_headers[section_nr-1].sect_offset > file_size) {
+        return_value = ERR_INVALID_ARGUMENTS;
+        goto display_error_messages;
+    }
+    char * line = (char*)malloc(sizeof(char)*MAX_LINE_LENGTH);
+    if(line == NULL) {
+        return_value = ERR_ALLOCATING_MEMORY;
+        goto display_error_messages;
+    }
+    return_value = extract_line(fd,&sf_header,section_nr,line_nr,line,&valid);
+
+    if(return_value == SUCCESS) {
+        printf("SUCCESS\n%s\n",line);
+        if(line != NULL) {
+            free(line);
+        }
+        return;
+    }
+
+    display_error_messages:
+    printf("ERROR\n");
+    if (return_value == ERR_MISSING_ARGUMENTS)
+        printf(" USAGE: extract  path=<file_path> section=<section_nr> line=<line_nr>\nThe order of the options is not relevant.\n");
+    if (return_value == ERR_INVALID_PATH)
+        printf("Invalid file path\n");
+    if (return_value == ERR_READING_FILE)
+        printf("Error reading from file.\n");
+    if (return_value == ERR_ALLOCATING_MEMORY)
+        printf("Error allocating memory for line buffer.\n");
+    if (return_value == ERR_INVALID_LINE_ENDING)
+        printf("Invalid line ending.\n");
+    if(return_value == ERR_INVALID_FILE_FORMAT || return_value == ERR_INVALID_ARGUMENTS){
+        printf("invalid ");
+        if(!valid.file)
+            printf("file|");
+        if(!valid.section)
+            printf("section|");
+        if(!valid.line)
+            printf("line|");
+        printf("\n");
+    }
+}
+
+int filter_line(int fd, struct header * sf_header, int section_nr, int line_nr, char * line_buf,struct extract_op_parameters * valid);
+void perform_op_filter(int nr_parameters, char ** parameters) {
     int return_value = SUCCESS;
 
     struct header sf_header;
