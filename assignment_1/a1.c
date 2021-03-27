@@ -49,7 +49,6 @@ struct header{
     struct section_header * section_headers;
 };
 
-// command line parameters
 struct list_op_parameters{
     bool path;
     bool recursive;
@@ -74,6 +73,8 @@ struct valid_header_fields{
 // list the directory's content
 int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count, char * suffix, char * permission, struct list_op_parameters detected, bool filter);
 unsigned convert_permission_format(const char * permission);
+bool validate_file_with_suffix(struct dirent entry, char * suffix);
+bool validate_file_with_permission(struct stat inode, char * permission);
 void perform_op_list(int nr_parameters, char ** parameters,bool filter);
 // parse files
 int parse_file_header(int fd, struct header * sf_header, struct valid_header_fields * valid);
@@ -394,6 +395,7 @@ void perform_op_parse(int nr_parameters, char ** parameters){
     write(fd,&nr_sections,1);
     for(int i=0;i<nr_sections;i++) {
         char section_name[20];
+        memset(section_name,' ',19);
         snprintf(section_name,19,"section named %d",i);
         write(fd,section_name ,19);
         int type = 19;
@@ -406,11 +408,10 @@ void perform_op_parse(int nr_parameters, char ** parameters){
         write(fd,&line_ending_hx,2);
     }
 
-    write(fd,"first\nsecond\nthird\nfourth\nfifth",40);
+    //write(fd,"first\nsecond\nthird\nfourth\nfifth",40);
 
-    if(fd > 0) {
+    if(fd > 0)
         close(fd);
-    }
 
     fd = open(file_path,O_RDONLY);
     if(fd < 0) {
@@ -433,11 +434,18 @@ void perform_op_parse(int nr_parameters, char ** parameters){
                    sf_header.section_headers[i].sect_type,
                    sf_header.section_headers[i].sect_size);
         }
-        return;
     }
-    display_error_messages:
 
-    printf("ERROR\n");
+    if (sf_header.section_headers != NULL) {
+        free(sf_header.section_headers);
+    }
+
+    if(fd > 0)
+        close(fd);
+
+    display_error_messages:
+    if(return_value != SUCCESS) {
+        printf("ERROR\n");
         if (return_value == ERR_MISSING_ARGUMENTS)
             printf("USAGE: parse  path=<file_path> \nThe order of the options is not relevant.\n");
         if (return_value == ERR_MISSING_PATH)
@@ -460,7 +468,7 @@ void perform_op_parse(int nr_parameters, char ** parameters){
                 printf("sect_types|");
             printf("\n");
         }
-
+    }
 }
 
 int extract_line(int fd, struct header * sf_header, int section_nr, int line_nr, char * line_buf,struct extract_op_parameters * valid){
@@ -547,30 +555,31 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
     fd = open(file_path,O_RDONLY);
     if(fd < 0) {
         return_value = ERR_INVALID_PATH;
-        goto display_error_messages;
+        goto clean_up;
     }
 
     struct valid_header_fields valid_header = {.magic = false, .section_type = false, .version = false, .nr_sections = false};
 
     // parse file's header
     return_value = parse_file_header(fd,&sf_header,&valid_header);
+
     if(return_value == SUCCESS) {
         valid.file = true;
     }else {
         valid.file = valid_header.magic && valid_header.section_type && valid_header.version && valid_header.nr_sections;
-        goto display_error_messages;
+        goto clean_up;
     }
 
     // get size of file
     int file_size = lseek(fd,0,SEEK_END);
     if(file_size > 0 && sf_header.section_headers[section_nr-1].sect_offset > file_size) {
         return_value = ERR_INVALID_ARGUMENTS;
-        goto display_error_messages;
+        goto clean_up;
     }
     char * line = (char*)malloc(sizeof(char)*MAX_LINE_LENGTH);
     if(line == NULL) {
         return_value = ERR_ALLOCATING_MEMORY;
-        goto display_error_messages;
+        goto clean_up;
     }
     return_value = extract_line(fd,&sf_header,section_nr,line_nr,line,&valid);
 
@@ -581,37 +590,39 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
             printf("%c",line[i]);
         }
         printf("\n");
-        if(line != NULL) {
-            free(line);
-        }
-        return;
     }
-
-    if(fd > 0) {
+    clean_up:
+    if(fd > 0)
         close(fd);
+    if(line != NULL) {
+        free(line);
     }
+    if(sf_header.section_headers != NULL)
+        free(sf_header.section_headers);
 
     display_error_messages:
-    printf("ERROR\n");
-    if (return_value == ERR_MISSING_ARGUMENTS)
-        printf(" USAGE: extract  path=<file_path> section=<section_nr> line=<line_nr>\nThe order of the options is not relevant.\n");
-    if (return_value == ERR_INVALID_PATH)
-        printf("Invalid file path\n");
-    if (return_value == ERR_READING_FILE)
-        printf("Error reading from file.\n");
-    if (return_value == ERR_ALLOCATING_MEMORY)
-        printf("Error allocating memory for line buffer.\n");
-    if (return_value == ERR_INVALID_LINE_ENDING)
-        printf("Invalid line ending.\n");
-    if(return_value == ERR_INVALID_FILE_FORMAT || return_value == ERR_INVALID_ARGUMENTS){
-        printf("invalid ");
-        if(!valid.file)
-            printf("file|");
-        if(!valid.section)
-            printf("section|");
-        if(!valid.line)
-            printf("line|");
-        printf("\n");
+    if(return_value != SUCCESS) {
+        printf("ERROR\n");
+        if (return_value == ERR_MISSING_ARGUMENTS)
+            printf(" USAGE: extract  path=<file_path> section=<section_nr> line=<line_nr>\nThe order of the options is not relevant.\n");
+        if (return_value == ERR_INVALID_PATH)
+            printf("Invalid file path\n");
+        if (return_value == ERR_READING_FILE)
+            printf("Error reading from file.\n");
+        if (return_value == ERR_ALLOCATING_MEMORY)
+            printf("Error allocating memory for line buffer.\n");
+        if (return_value == ERR_INVALID_LINE_ENDING)
+            printf("Invalid line ending.\n");
+        if (return_value == ERR_INVALID_FILE_FORMAT || return_value == ERR_INVALID_ARGUMENTS) {
+            printf("invalid ");
+            if (!valid.file)
+                printf("file|");
+            if (!valid.section)
+                printf("section|");
+            if (!valid.line)
+                printf("line|");
+            printf("\n");
+        }
     }
 }
 
@@ -663,8 +674,7 @@ int validate_file_with_filter(char * file_path, bool *valid) {
     }
 
     finish:
-    if(fd > 0) {
+    if(fd > 0)
         close(fd);
-    }
     return return_value;
 }
