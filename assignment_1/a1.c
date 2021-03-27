@@ -13,6 +13,7 @@
 #define OP_LIST "list"
 #define OP_PARSE "parse"
 #define OP_EXTRACT "extract"
+#define OP_FILTER "findall"
 
 const int line_ending =  0x0A;
 const char magic_field[] = "1A4P";
