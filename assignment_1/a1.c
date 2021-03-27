@@ -72,10 +72,12 @@ struct valid_header_fields{
 
 // list the directory's content
 int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count, char * suffix, char * permission, struct list_op_parameters detected, bool filter);
+void perform_op_list(int nr_parameters, char ** parameters,bool filter);
+// translate the permission rights
 unsigned convert_permission_format(const char * permission);
+// apply filter on files
 bool validate_file_with_suffix(struct dirent entry, char * suffix);
 bool validate_file_with_permission(struct stat inode, char * permission);
-void perform_op_list(int nr_parameters, char ** parameters,bool filter);
 // parse files
 int parse_file_header(int fd, struct header * sf_header, struct valid_header_fields * valid);
 void perform_op_parse(int nr_parameters, char ** parameters);
@@ -87,17 +89,16 @@ int validate_file_with_filter(char * file_path, bool *valid);
 
 int main(int argc, char **argv){
     if(argc >= 2){
-        if(strcmp(argv[1], OP_VARIANT) == 0){
+        if(strcmp(argv[1], OP_VARIANT) == 0)
             printf("41938\n");
-        }else if(strcmp(argv[1],OP_LIST) == 0) {
+        else if(strcmp(argv[1],OP_LIST) == 0)
             perform_op_list(argc,argv,false);
-        }else if(strcmp(argv[1],OP_PARSE) == 0) {
+        else if(strcmp(argv[1],OP_PARSE) == 0)
             perform_op_parse(argc,argv);
-        }else if(strcmp(argv[1],OP_EXTRACT) == 0) {
+        else if(strcmp(argv[1],OP_EXTRACT) == 0)
             perform_op_extract(argc,argv);
-        }else if(strcmp(argv[1],OP_FILTER) == 0) {
+        else if(strcmp(argv[1],OP_FILTER) == 0)
             perform_op_list(argc,argv,true);
-        }
     }
     return 0;
 }
@@ -107,9 +108,7 @@ void perform_op_list(int nr_parameters, char ** parameters, bool filter) {
     char ** dir_elements;
     int elem_count = 0;
     int return_value = SUCCESS;
-
     struct list_op_parameters detected = {.path=false,.permission=false,.recursive=false,.suffix=false};
-
     char dir_path[MAX_PATH_SIZE+1];
     char suffix[MAX_NAME_SIZE+1];
     char permission[10];
@@ -134,8 +133,8 @@ void perform_op_list(int nr_parameters, char ** parameters, bool filter) {
                 detected.suffix = true;
             }else if(strcmp(filter_option,"permissions") == 0) {
                 // detected filter option for permission
-                detected.permission = true;
                 strcpy(permission,filter_value);
+                detected.permission = true;
             }
         }
     }
@@ -143,18 +142,21 @@ void perform_op_list(int nr_parameters, char ** parameters, bool filter) {
         return_value = ERR_MISSING_PATH;
         goto display_error_messages;
     }
-
     dir_elements = (char**)malloc(sizeof(char*)*MAX_NR_ELEMENTS);
 
     return_value = list_directory_tree(dir_path, dir_elements, &elem_count,suffix,permission,detected,filter);
-
     if(return_value == SUCCESS) {
         printf("SUCCESS\n");
         if(elem_count > 0) {
             for(int i=0;i<elem_count;i++) {
                 printf("%s\n",dir_elements[i]);
-                free(dir_elements[i]);
             }
+        }
+    }
+    // deallocate memory
+    for(int i=0;i<elem_count;i++) {
+        if(dir_elements[i] != NULL) {
+            free(dir_elements[i]);
         }
     }
     free(dir_elements);
@@ -169,7 +171,6 @@ void perform_op_list(int nr_parameters, char ** parameters, bool filter) {
         if (return_value == ERR_INVALID_PATH)
             printf("Invalid directory path\n");
     }
-
 }
 
 unsigned convert_permission_format(const char * permission) {
@@ -177,14 +178,12 @@ unsigned convert_permission_format(const char * permission) {
     unsigned p_rights = 0u;
     unsigned bit = 1u;
     for(int i=8;i>=0;i--) {
-        if(permission[i] != '-') {
+        if(permission[i] != '-')
             p_rights = p_rights | bit;
-        }
         bit = bit << 1u;
     }
     return p_rights;
 }
-
 
 bool validate_file_with_suffix(struct dirent entry, char * suffix) {
     // check suffix
@@ -210,39 +209,39 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count,
     }
     // iterate through the directory's content
     while ((entry=readdir(dir)) != 0) {
-        // exclude the .. directory
+        // exclude the parent and current directory
         if(strcmp(entry->d_name,"..") != 0 && strcmp(entry->d_name,".") != 0) {
             // get the absolute path
             snprintf(abs_entry_path, MAX_PATH_SIZE, "%s/%s", dir_path, entry->d_name);
+            abs_entry_path[MAX_PATH_SIZE]='\0';
             // get details about the entry
             lstat(abs_entry_path, &inode);
-
             bool condition = true;
             if(filter) {
-                // apply filter
-                return_value = validate_file_with_filter(abs_entry_path,&condition);
-                if(return_value != SUCCESS) {
-                    goto clean_up;
+                condition = false;
+                if(S_ISREG(inode.st_mode)) {
+                    // apply filter only to files
+                    return_value = validate_file_with_filter(abs_entry_path, &condition);
+                    if (return_value != SUCCESS) {
+                        goto clean_up;
+                    }
                 }
             }else {
                 // check suffix
                 if (detected.suffix)
                     condition = validate_file_with_suffix(*entry, suffix);
-
                 // check permission rights
                 if (detected.permission) {
                     condition = validate_file_with_permission(inode, permission);
                 }
             }
-
             // add element to the list if the required conditions are met
             if(condition) {
-                dir_elements[*elem_count] = (char*)malloc(sizeof(char)*MAX_PATH_SIZE);
+                dir_elements[*elem_count] = (char*)malloc(sizeof(char)*(MAX_PATH_SIZE+1));
                 strcpy(dir_elements[*elem_count], abs_entry_path);
                 (*elem_count)++;
             }
-
-            if(detected.recursive && S_ISDIR(inode.st_mode)) {
+            if((detected.recursive || filter) && S_ISDIR(inode.st_mode)) {
                 // if it is a directory, then lists its contents too
                 int return_value_sub_fct = list_directory_tree(abs_entry_path, dir_elements, elem_count, suffix,
                                                                permission, detected,filter);
@@ -252,7 +251,6 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count,
                 }
             }
         }
-
     }
     clean_up:
     // close the directory
@@ -264,62 +262,53 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count,
 
 int parse_file_header(int fd, struct header * sf_header, struct valid_header_fields * valid) {
     int return_value = SUCCESS;
-
     //initialize fields
     sf_header->section_headers = NULL;
     sf_header->no_of_sections=0;
     sf_header->header_size=0;
     sf_header->version=0;
 
-    int read_magic_nr_bytes;
-    int read_header_size_nr_bytes;
-    int read_version_nr_bytes;
-    int read_no_of_sections_nr_bytes;
-
     lseek(fd,0,SEEK_SET);
 
-    read_magic_nr_bytes = read(fd,sf_header->magic,4);
+    int read_magic_nr_bytes = read(fd,sf_header->magic,4);
     sf_header->magic[4] = '\0';
-    read_header_size_nr_bytes = read(fd,&sf_header->header_size,2);
-    read_version_nr_bytes = read(fd,&sf_header->version,2);
-    read_no_of_sections_nr_bytes = read(fd,&sf_header->no_of_sections,1);
+    int read_header_size_nr_bytes = read(fd,&sf_header->header_size,2);
+    int read_version_nr_bytes = read(fd,&sf_header->version,2);
+    int read_no_of_sections_nr_bytes = read(fd,&sf_header->no_of_sections,1);
 
     if(read_magic_nr_bytes < 0 || read_header_size_nr_bytes < 0 || read_version_nr_bytes < 0 || read_no_of_sections_nr_bytes < 0) {
         return_value = ERR_READING_FILE;
         goto finish;
     }
     // check if magic field is valid
-    if (strcmp(sf_header->magic, magic_field) == 0) {
+    if (strcmp(sf_header->magic, magic_field) == 0)
         valid->magic = true;
-    }
-    // check if version is valid
-    if (sf_header->version >= 47 && sf_header->version <= 128) {
-        valid->version = true;
-    }
-    // check if the number of sections is in a valid range
-    if (sf_header->no_of_sections >= 3 && sf_header->no_of_sections <= 17) {
-        valid->nr_sections = true;
-    }
 
+    // check if version is valid
+    if (sf_header->version >= 47 && sf_header->version <= 128)
+        valid->version = true;
+
+    // check if the number of sections is in a valid range
+    if (sf_header->no_of_sections >= 3 && sf_header->no_of_sections <= 17)
+        valid->nr_sections = true;
+
+    if(!valid->magic || !valid->nr_sections || !valid->version) {
+        return_value = ERR_INVALID_FILE_FORMAT;
+        goto finish;
+    }
     sf_header->section_headers = (struct section_header*)malloc(sizeof(struct section_header)*sf_header->no_of_sections);
     if(sf_header->section_headers == NULL) {
         return_value = ERR_ALLOCATING_MEMORY;
         goto finish;
     }
 
-    int read_sect_name_nr_bytes;
-    int read_sect_type_nr_bytes;
-    int read_sect_offset_nr_bytes;
-    int read_sect_size_nr_bytes;
-
     valid->section_type = true;
-
     for(int i=0;i<sf_header->no_of_sections;i++) {
-        read_sect_name_nr_bytes = read(fd,&sf_header->section_headers[i].sect_name,19);
+        int read_sect_name_nr_bytes = read(fd,&sf_header->section_headers[i].sect_name,19);
         sf_header->section_headers[i].sect_name[19] = '\0';
-        read_sect_type_nr_bytes = read(fd,&sf_header->section_headers[i].sect_type,4);
-        read_sect_offset_nr_bytes = read(fd,&sf_header->section_headers[i].sect_offset,4);
-        read_sect_size_nr_bytes = read(fd,&sf_header->section_headers[i].sect_size,4);
+        int read_sect_type_nr_bytes = read(fd,&sf_header->section_headers[i].sect_type,4);
+        int read_sect_offset_nr_bytes = read(fd,&sf_header->section_headers[i].sect_offset,4);
+        int read_sect_size_nr_bytes = read(fd,&sf_header->section_headers[i].sect_size,4);
 
         if(read_sect_size_nr_bytes < 0 || read_sect_offset_nr_bytes < 0 || read_sect_type_nr_bytes < 0 || read_sect_name_nr_bytes < 0) {
             return_value = ERR_READING_FILE;
@@ -342,7 +331,7 @@ int parse_file_header(int fd, struct header * sf_header, struct valid_header_fie
             goto finish;
         }
     }
-    if(!valid->magic || !valid->section_type || !valid->nr_sections || !valid->version) {
+    if(!valid->section_type) {
         return_value = ERR_INVALID_FILE_FORMAT;
     }
     finish:
@@ -352,7 +341,6 @@ int parse_file_header(int fd, struct header * sf_header, struct valid_header_fie
 
 void perform_op_parse(int nr_parameters, char ** parameters){
     int return_value = SUCCESS;
-
     struct header sf_header;
     int fd;
     char file_path[MAX_PATH_SIZE+1];
@@ -375,11 +363,8 @@ void perform_op_parse(int nr_parameters, char ** parameters){
         return_value = ERR_MISSING_PATH;
         goto display_error_messages;
     }
-
     /*
-     * first write to the file
-     */
-
+     //first write to the file
     fd = open(file_path,O_WRONLY | O_CREAT | O_TRUNC, 0777);
     if(fd < 0) {
         return_value = ERR_INVALID_PATH;
@@ -412,7 +397,7 @@ void perform_op_parse(int nr_parameters, char ** parameters){
 
     if(fd > 0)
         close(fd);
-
+*/
     fd = open(file_path,O_RDONLY);
     if(fd < 0) {
         return_value = ERR_INVALID_PATH;
@@ -473,7 +458,6 @@ void perform_op_parse(int nr_parameters, char ** parameters){
 
 int extract_line(int fd, struct header * sf_header, int section_nr, int line_nr, char * line_buf,struct extract_op_parameters * valid){
     int return_value = SUCCESS;
-
     if(section_nr > sf_header->no_of_sections) {
         return_value = ERR_INVALID_ARGUMENTS;
         goto finish;
@@ -516,7 +500,6 @@ int extract_line(int fd, struct header * sf_header, int section_nr, int line_nr,
 }
 void perform_op_extract(int nr_parameters, char ** parameters) {
     int return_value = SUCCESS;
-
     struct header sf_header;
     int fd;
     char file_path[MAX_PATH_SIZE+1];
@@ -555,10 +538,15 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
     fd = open(file_path,O_RDONLY);
     if(fd < 0) {
         return_value = ERR_INVALID_PATH;
-        goto clean_up;
+        goto display_error_messages;
     }
 
     struct valid_header_fields valid_header = {.magic = false, .section_type = false, .version = false, .nr_sections = false};
+    char * line = (char*)malloc(sizeof(char)*MAX_LINE_LENGTH);
+    if(line == NULL) {
+        return_value = ERR_ALLOCATING_MEMORY;
+        goto clean_up;
+    }
 
     // parse file's header
     return_value = parse_file_header(fd,&sf_header,&valid_header);
@@ -566,7 +554,7 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
     if(return_value == SUCCESS) {
         valid.file = true;
     }else {
-        valid.file = valid_header.magic && valid_header.section_type && valid_header.version && valid_header.nr_sections;
+        valid.file = false;
         goto clean_up;
     }
 
@@ -576,11 +564,7 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
         return_value = ERR_INVALID_ARGUMENTS;
         goto clean_up;
     }
-    char * line = (char*)malloc(sizeof(char)*MAX_LINE_LENGTH);
-    if(line == NULL) {
-        return_value = ERR_ALLOCATING_MEMORY;
-        goto clean_up;
-    }
+
     return_value = extract_line(fd,&sf_header,section_nr,line_nr,line,&valid);
 
     if(return_value == SUCCESS) {
@@ -594,9 +578,8 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
     clean_up:
     if(fd > 0)
         close(fd);
-    if(line != NULL) {
+    if(line != NULL)
         free(line);
-    }
     if(sf_header.section_headers != NULL)
         free(sf_header.section_headers);
 
@@ -645,9 +628,9 @@ int count_lines(int fd, struct header * sf_header, int section_nr,int * line_cou
     }
     return return_value;
 }
+
 int validate_file_with_filter(char * file_path, bool *valid) {
     int return_value = SUCCESS;
-
     int fd = open(file_path,O_RDONLY);
     if(fd < 0) {
         return_value = ERR_INVALID_PATH;
@@ -672,8 +655,9 @@ int validate_file_with_filter(char * file_path, bool *valid) {
             *valid = true;
         }
     }
-
     finish:
+    if(sf_header.section_headers != NULL)
+        free(sf_header.section_headers);
     if(fd > 0)
         close(fd);
     return return_value;
