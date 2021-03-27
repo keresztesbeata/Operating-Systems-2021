@@ -270,10 +270,10 @@ int parse_file_header(int fd, struct header * sf_header, struct valid_header_fie
     sf_header->header_size=0;
     sf_header->version=0;
 
-    int read_magic_nr_bytes = 0;
-    int read_header_size_nr_bytes = 0;
-    int read_version_nr_bytes = 0;
-    int read_no_of_sections_nr_bytes = 0;
+    int read_magic_nr_bytes;
+    int read_header_size_nr_bytes;
+    int read_version_nr_bytes;
+    int read_no_of_sections_nr_bytes;
 
     lseek(fd,0,SEEK_SET);
 
@@ -306,10 +306,10 @@ int parse_file_header(int fd, struct header * sf_header, struct valid_header_fie
         goto finish;
     }
 
-    int read_sect_name_nr_bytes = 0;
-    int read_sect_type_nr_bytes = 0;
-    int read_sect_offset_nr_bytes = 0;
-    int read_sect_size_nr_bytes = 0;
+    int read_sect_name_nr_bytes;
+    int read_sect_type_nr_bytes;
+    int read_sect_offset_nr_bytes;
+    int read_sect_size_nr_bytes;
 
     valid->section_type = true;
 
