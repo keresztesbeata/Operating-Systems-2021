@@ -381,7 +381,7 @@ void perform_op_parse(int nr_parameters, char ** parameters){
         write(fd,section_name ,19);
         int type = 19;
         write(fd,&type,4);
-        int offset = 0x006a;
+        int offset = 0x0069;
         write(fd,&offset,4);
         int size = 20;
         write(fd,&size,4);
@@ -389,7 +389,7 @@ void perform_op_parse(int nr_parameters, char ** parameters){
         write(fd,&line_ending_hx,2);
     }
 
-    write(fd,"sfgasdfhgdsfghbsf\nsdsdffgfh\nnsdfgsfyas\nasdfsgguysa\nsdfsdfgsdfgsdfgdsgdsg",30);
+    write(fd,"first\nsecond\nthird\nfourth\nfifth",40);
 
     if(fd > 0) {
         close(fd);
@@ -559,7 +559,12 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
     return_value = extract_line(fd,&sf_header,section_nr,line_nr,line,&valid);
 
     if(return_value == SUCCESS) {
-        printf("SUCCESS\n%s\n",line);
+        printf("SUCCESS\n");
+        int n = strlen(line);
+        for(int i=n-1;i>=0;i--) {
+            printf("%c",line[i]);
+        }
+        printf("\n");
         if(line != NULL) {
             free(line);
         }
@@ -660,7 +665,7 @@ void perform_op_filter(int nr_parameters, char ** parameters) {
     return_value = extract_line(fd,&sf_header,section_nr,line_nr,line,&valid);
 
     if(return_value == SUCCESS) {
-        printf("SUCCESS\n%s\n",line);
+        printf("SUCCESS\n");
         if(line != NULL) {
             free(line);
         }
