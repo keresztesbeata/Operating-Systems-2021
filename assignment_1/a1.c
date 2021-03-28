@@ -581,24 +581,11 @@ int count_lines(int fd, struct header * sf_header, int section_nr,int * line_cou
     int ch_count=0;
     char ch;
     int read_return_value = 0;
-//    int buf_size = sf_header->section_headers[section_nr-1].sect_size;
-//    char buf[buf_size+1];
 
     if(lseek(fd,sf_header->section_headers[section_nr-1].sect_offset,SEEK_SET) < 0) {
         return_value = ERR_READING_FILE;
         goto finish;
     }
-//
-//    read_return_value = read(fd,buf,sf_header->section_headers[section_nr-1].sect_size);
-//    if(read_return_value == -1) {
-//        return_value = ERR_READING_FILE;
-//    }
-//    buf[buf_size]='\0';
-//    char *p = buf;
-//    do{
-//        p = strchr(p,'\n');
-//        (*line_count)++;
-//    }while(p < buf + buf_size && (*line_count) < 16);
 
     int max_ch_count = sf_header->section_headers[section_nr-1].sect_size;
     while(ch_count < max_ch_count && ((read_return_value = read(fd,&ch,1)) > 0)) {
@@ -628,17 +615,6 @@ int validate_file_with_filter(char * file_path, bool *valid) {
     if(parse_file_header(fd,&sf_header,&failure_src) == ERR_INVALID_FILE_FORMAT) {
         goto finish;
     }
-//    for(int i=1;i<=sf_header.no_of_sections;i++) {
-//        int nr_lines_in_section = 0;
-//        return_value = count_lines(fd,&sf_header,i,&nr_lines_in_section);
-//        if(return_value == ERR_READING_FILE) {
-//            goto finish;
-//        }
-//        if(nr_lines_in_section == 16) {
-//            *valid = true;
-//            goto finish;
-//        }
-//    }
 
     for(int i=1;i<=sf_header.no_of_sections;i++) {
         int nr_lines_in_section = 0;
