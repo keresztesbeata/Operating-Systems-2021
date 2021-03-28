@@ -66,7 +66,7 @@ enum invalid_sf_field {NONE,MAGIC,VERSION,SECT_NR,SECT_TYPE};
 enum invalid_sf_extract_param {NONE_P,FILE_FORMAT,SECTION,LINE};
 
 // list the directory's content
-int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count, char * suffix, char * permission, struct list_op_parameters detected, bool filter);
+int list_directory_tree(char * dir_path, char ** dir_elements, int * max_nr_elements, int * elem_count, char * suffix, char * permission, struct list_op_parameters detected, bool filter);
 void perform_op_list(int nr_parameters, char ** parameters,bool filter);
 // translate the permission rights
 unsigned convert_permission_format(const char * permission);
@@ -102,6 +102,7 @@ int main(int argc, char **argv){
 void perform_op_list(int nr_parameters, char ** parameters, bool filter) {
     char ** dir_elements;
     int elem_count = 0;
+    int max_nr_elements = 0;
     int return_value = SUCCESS;
     struct list_op_parameters detected = {.path=false,.permission=false,.recursive=false,.suffix=false};
     char dir_path[MAX_PATH_SIZE+1];
@@ -137,9 +138,9 @@ void perform_op_list(int nr_parameters, char ** parameters, bool filter) {
         return_value = ERR_MISSING_PATH;
         goto display_error_messages;
     }
-    dir_elements = (char**)malloc(sizeof(char*)*MAX_NR_ELEMENTS);
+    dir_elements = (char**)calloc(sizeof(char*),MAX_NR_ELEMENTS);
 
-    return_value = list_directory_tree(dir_path, dir_elements, &elem_count,suffix,permission,detected,filter);
+    return_value = list_directory_tree(dir_path, dir_elements, &max_nr_elements,&elem_count,suffix,permission,detected,filter);
     if(return_value == SUCCESS) {
         printf("SUCCESS\n");
         if(elem_count > 0) {
@@ -148,6 +149,7 @@ void perform_op_list(int nr_parameters, char ** parameters, bool filter) {
             }
         }
     }
+
     // deallocate memory
     for(int i=0;i<elem_count;i++) {
         if(dir_elements[i] != NULL) {
@@ -190,7 +192,7 @@ bool validate_file_with_permission(struct stat inode, char * permission) {
     return (inode.st_mode & permission_binary_format) == permission_binary_format;
 }
 
-int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count, char * suffix, char * permission,struct list_op_parameters detected, bool filter){
+int list_directory_tree(char * dir_path, char ** dir_elements, int * max_nr_elements, int * elem_count, char * suffix, char * permission,struct list_op_parameters detected, bool filter){
     DIR* dir;
     struct dirent *entry;
     struct stat inode;
@@ -213,9 +215,9 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count,
             lstat(abs_entry_path, &inode);
             bool condition = true;
             if(filter) {
-                condition = false;
                 if(S_ISREG(inode.st_mode)) {
                     // apply filter only to files
+                    condition = false;
                     return_value = validate_file_with_filter(abs_entry_path, &condition);
                     if (return_value != SUCCESS) {
                         goto clean_up;
@@ -232,13 +234,15 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * elem_count,
             }
             // add element to the list if the required conditions are met
             if(condition) {
-                dir_elements[*elem_count] = (char*)malloc(sizeof(char)*(MAX_PATH_SIZE+1));
-                strcpy(dir_elements[*elem_count], abs_entry_path);
-                (*elem_count)++;
+                if((filter && S_ISREG(inode.st_mode)) || !filter) {
+                    dir_elements[*elem_count] = (char *) malloc(sizeof(char) * (MAX_PATH_SIZE + 1));
+                    strncpy(dir_elements[*elem_count], abs_entry_path, MAX_PATH_SIZE);
+                    (*elem_count)++;
+                }
             }
             if((detected.recursive || filter) && S_ISDIR(inode.st_mode)) {
                 // if it is a directory, then lists its contents too
-                int return_value_sub_fct = list_directory_tree(abs_entry_path, dir_elements, elem_count, suffix,
+                int return_value_sub_fct = list_directory_tree(abs_entry_path, dir_elements, max_nr_elements,elem_count, suffix,
                                                                permission, detected,filter);
                 if (return_value_sub_fct != SUCCESS) {
                     return_value = return_value_sub_fct;
@@ -414,24 +418,32 @@ int extract_line(int fd, struct header * sf_header, int section_nr, int line_nr,
         return_value = ERR_INVALID_ARGUMENTS;
         goto finish;
     }
-    if(lseek(fd,sf_header->section_headers[section_nr-1].sect_offset+1,SEEK_SET) < 0) {
+    if(lseek(fd,sf_header->section_headers[section_nr-1].sect_offset,SEEK_SET) < 0) {
         return_value = ERR_READING_FILE;
         goto finish;
     }
 
     int line_count = 1;
     int ch_count = 0;
-    int buf_idx=0;
+    int buf_idx = 0;
     char ch;
     int read_return_value;
     int max_ch_count = sf_header->section_headers[section_nr-1].sect_size;
-    while(ch_count < max_ch_count && ((read_return_value = read(fd,&ch,1)) > 0)) {
+    while(ch_count < max_ch_count && line_count <= line_nr && ((read_return_value = read(fd,&ch,1)) > 0)) {
         if(ch == '\n') {
             line_count++;
         }else if(line_count == line_nr) {
             line_buf[buf_idx] = ch;
             buf_idx++;
-            line_buf[buf_idx]='\0';
+            if(buf_idx >= *buf_size - 1) {
+                (*buf_size) += MAX_LINE_LENGTH + 1;
+                line_buf = (char *) realloc(line_buf, sizeof(char) * (*buf_size));
+                if (line_buf == NULL) {
+                    return_value = ERR_ALLOCATING_MEMORY;
+                    goto finish;
+                }
+                line_buf[*buf_size-1] = '\0';
+            }
         }
         ch_count++;
     }
@@ -444,56 +456,10 @@ int extract_line(int fd, struct header * sf_header, int section_nr, int line_nr,
         return_value = ERR_INVALID_ARGUMENTS;
         goto finish;
     }
-
+    line_buf[buf_idx]='\0';
     (*buf_size) = buf_idx;
     finish:
     return return_value;
-//    int line_count = 1;
-//    int ch_count = 0;
-//    int buf_idx=0;
-//    char ch;
-//    int read_return_value;
-//    int max_ch_count = sf_header->section_headers[section_nr-1].sect_size;
-//    while(line_count <= line_nr && ch_count < max_ch_count && ((read_return_value = read(fd,&ch,1)) > 0)) {
-//        if(ch == '\n') {
-//            line_count++;
-//        }else if(line_count == line_nr) {
-//            line_buf[buf_idx] = ch;
-//            buf_idx++;
-//         //   line_buf[buf_idx] = '\0';
-//            if(buf_idx >= *buf_size) {
-//                (*buf_size) += MAX_LINE_LENGTH;
-//                line_buf = (char*)realloc(line_buf,sizeof(char)*(*buf_size+1));
-//                if(line_buf == NULL) {
-//                    return_value = ERR_ALLOCATING_MEMORY;
-//                    goto clean_up;
-//                }
-//                line_buf[*buf_size] = '\0';
-//            }
-//        }
-//        ch_count++;
-//    }
-//    line_buf[buf_idx] = '\0';
-//    buf_idx++;
-//    *buf_size = buf_idx;
-//    if(read_return_value == -1) {
-//        return_value = ERR_READING_FILE;
-//        goto clean_up;
-//    }
-//    if(ch_count >= max_ch_count && line_count < line_nr) {
-//        *failure_src = LINE;
-//        return_value = ERR_INVALID_ARGUMENTS;
-//        goto clean_up;
-//    }
-//    clean_up:
-//    if(return_value != SUCCESS) {
-//        if(line_buf != NULL) {
-//            free(line_buf);
-//            line_buf = NULL;
-//        }
-//    }
-//    finish:
-//    return return_value;
 }
 void perform_op_extract(int nr_parameters, char ** parameters) {
     int return_value = SUCCESS;
@@ -557,13 +523,13 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
     }
 
     // allocate initial size for the line buffer
-    int buf_size = MAX_LINE_LENGTH;
-    char * line = (char*)calloc((buf_size+1),sizeof(char));
+    int buf_size = MAX_LINE_LENGTH+1;
+    char * line = (char*)calloc(buf_size,sizeof(char));
     if(line == NULL) {
         return_value = ERR_ALLOCATING_MEMORY;
         goto clean_up;
     }
-    line[buf_size]='\0';
+    line[buf_size-1]='\0';
 
     return_value = extract_line(fd,&sf_header,section_nr,line_nr,line,&buf_size,&failure_src);
 
@@ -612,9 +578,28 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
 int count_lines(int fd, struct header * sf_header, int section_nr,int * line_count){
     int return_value = SUCCESS;
     *line_count = 1;
-    int ch_count = 0;
+    int ch_count=0;
     char ch;
     int read_return_value = 0;
+//    int buf_size = sf_header->section_headers[section_nr-1].sect_size;
+//    char buf[buf_size+1];
+
+    if(lseek(fd,sf_header->section_headers[section_nr-1].sect_offset,SEEK_SET) < 0) {
+        return_value = ERR_READING_FILE;
+        goto finish;
+    }
+//
+//    read_return_value = read(fd,buf,sf_header->section_headers[section_nr-1].sect_size);
+//    if(read_return_value == -1) {
+//        return_value = ERR_READING_FILE;
+//    }
+//    buf[buf_size]='\0';
+//    char *p = buf;
+//    do{
+//        p = strchr(p,'\n');
+//        (*line_count)++;
+//    }while(p < buf + buf_size && (*line_count) < 16);
+
     int max_ch_count = sf_header->section_headers[section_nr-1].sect_size;
     while(ch_count < max_ch_count && ((read_return_value = read(fd,&ch,1)) > 0)) {
         if(ch == '\n') {
@@ -625,6 +610,7 @@ int count_lines(int fd, struct header * sf_header, int section_nr,int * line_cou
     if(read_return_value == -1) {
         return_value = ERR_READING_FILE;
     }
+    finish:
     return return_value;
 }
 
@@ -636,17 +622,28 @@ int validate_file_with_filter(char * file_path, bool *valid) {
         goto finish;
     }
     struct header sf_header;
-    enum invalid_sf_field failure_src;
+    enum invalid_sf_field failure_src = NONE;
+    *valid = false;
 
-    return_value = parse_file_header(fd,&sf_header,&failure_src);
-    if(return_value != SUCCESS) {
+    if(parse_file_header(fd,&sf_header,&failure_src) == ERR_INVALID_FILE_FORMAT) {
         goto finish;
     }
-    *valid = false;
+//    for(int i=1;i<=sf_header.no_of_sections;i++) {
+//        int nr_lines_in_section = 0;
+//        return_value = count_lines(fd,&sf_header,i,&nr_lines_in_section);
+//        if(return_value == ERR_READING_FILE) {
+//            goto finish;
+//        }
+//        if(nr_lines_in_section == 16) {
+//            *valid = true;
+//            goto finish;
+//        }
+//    }
+
     for(int i=1;i<=sf_header.no_of_sections;i++) {
         int nr_lines_in_section = 0;
-        return_value = count_lines(fd,&sf_header,i,&nr_lines_in_section);
-        if(return_value != SUCCESS) {
+        if(count_lines(fd,&sf_header,i,&nr_lines_in_section) != SUCCESS) {
+            return_value = ERR_READING_FILE;
             goto finish;
         }
         if(nr_lines_in_section == 16) {
@@ -654,7 +651,6 @@ int validate_file_with_filter(char * file_path, bool *valid) {
         }
     }
     finish:
-
     if(sf_header.section_headers != NULL)
         free(sf_header.section_headers);
     if(fd > 0)
