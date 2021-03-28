@@ -578,26 +578,24 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
 
 int count_lines(int fd, struct header * sf_header, int section_nr,long * line_count){
     int return_value = SUCCESS;
-    *line_count = 1;
-    int ch_count=0;
-    char ch;
-    int read_return_value = 0;
-
+    int buf_size = sf_header->section_headers[section_nr-1].sect_size;
+    char buf[buf_size+1];
+    int ch_read;
     if(lseek(fd,sf_header->section_headers[section_nr-1].sect_offset,SEEK_SET) < 0) {
         return_value = ERR_READING_FILE;
         goto finish;
     }
-
-    int max_ch_count = sf_header->section_headers[section_nr-1].sect_size;
-    while(ch_count < max_ch_count && ((read_return_value = read(fd,&ch,1)) > 0)) {
-        if(ch == 0x0A) {
-            (*line_count)++;
-        }
-        ch_count++;
-    }
-    if(read_return_value == -1) {
+    if((ch_read = read(fd,buf,buf_size)) == -1) {
         return_value = ERR_READING_FILE;
+        goto finish;
     }
+    buf[ch_read] = '\0';
+    char * p = strtok(buf,"\n");
+    while(p != NULL) {
+        p = strtok(NULL,"\n");
+        (*line_count)++;
+    }
+
     finish:
     return return_value;
 }
@@ -625,6 +623,7 @@ int validate_file_with_filter(char * file_path, bool *valid) {
         }
         if(nr_lines_in_section == 16) {
             *valid = true;
+            break;
         }
     }
     finish:
