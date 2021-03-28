@@ -81,6 +81,7 @@ int extract_line(int fd, struct header * sf_header, int section_nr, int line_nr,
 void perform_op_extract(int nr_parameters, char ** parameters);
 // filter lines
 int validate_file_with_filter(char * file_path, bool *valid);
+int count_lines(int fd, struct header * sf_header, int section_nr,long * line_count);
 
 int main(int argc, char **argv){
     if(argc >= 2){
@@ -575,7 +576,7 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
     }
 }
 
-int count_lines(int fd, struct header * sf_header, int section_nr,int * line_count){
+int count_lines(int fd, struct header * sf_header, int section_nr,long * line_count){
     int return_value = SUCCESS;
     *line_count = 1;
     int ch_count=0;
@@ -589,7 +590,7 @@ int count_lines(int fd, struct header * sf_header, int section_nr,int * line_cou
 
     int max_ch_count = sf_header->section_headers[section_nr-1].sect_size;
     while(ch_count < max_ch_count && ((read_return_value = read(fd,&ch,1)) > 0)) {
-        if(ch == '\n') {
+        if(ch == 0x0A) {
             (*line_count)++;
         }
         ch_count++;
@@ -617,7 +618,7 @@ int validate_file_with_filter(char * file_path, bool *valid) {
     }
 
     for(int i=1;i<=sf_header.no_of_sections;i++) {
-        int nr_lines_in_section = 0;
+        long nr_lines_in_section = 0l;
         if(count_lines(fd,&sf_header,i,&nr_lines_in_section) != SUCCESS) {
             return_value = ERR_READING_FILE;
             goto finish;
