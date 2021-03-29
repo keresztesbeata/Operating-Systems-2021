@@ -214,33 +214,41 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * max_nr_elem
             abs_entry_path[MAX_PATH_SIZE]='\0';
             // get details about the entry
             lstat(abs_entry_path, &inode);
-            bool condition = true;
             if(filter) {
+                // filter the files with valid sf format and at least 1 section having exactly 16 lines
                 if(S_ISREG(inode.st_mode)) {
                     // apply filter only to files
-                    condition = false;
+                    bool condition = false;
                     return_value = validate_file_with_filter(abs_entry_path, &condition);
                     if (return_value != SUCCESS) {
                         goto clean_up;
                     }
+                    // add element to the list if the required conditions are met
+                    if(condition) {
+                        dir_elements[*elem_count] = (char *) malloc(sizeof(char) * (MAX_PATH_SIZE + 1));
+                        strncpy(dir_elements[*elem_count], abs_entry_path, MAX_PATH_SIZE);
+                        (*elem_count)++;
+                    }
                 }
             }else {
+                // apply the suffix and permission filters on the elements if they are asserted
+                bool valid_suffix = true;
+                bool valid_permission = true;
                 // check suffix
                 if (detected.suffix)
-                    condition = validate_file_with_suffix(*entry, suffix);
+                    valid_suffix = validate_file_with_suffix(*entry, suffix);
                 // check permission rights
                 if (detected.permission) {
-                    condition = validate_file_with_permission(inode, permission);
+                    valid_permission = validate_file_with_permission(inode, permission);
                 }
-            }
-            // add element to the list if the required conditions are met
-            if(condition) {
-                if((filter && S_ISREG(inode.st_mode)) || !filter) {
+                // add element to the list if the required conditions are met
+                if(valid_suffix && valid_permission) {
                     dir_elements[*elem_count] = (char *) malloc(sizeof(char) * (MAX_PATH_SIZE + 1));
                     strncpy(dir_elements[*elem_count], abs_entry_path, MAX_PATH_SIZE);
                     (*elem_count)++;
                 }
             }
+
             if((detected.recursive || filter) && S_ISDIR(inode.st_mode)) {
                 // if it is a directory, then lists its contents too
                 int return_value_sub_fct = list_directory_tree(abs_entry_path, dir_elements, max_nr_elements,elem_count, suffix,
