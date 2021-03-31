@@ -176,8 +176,9 @@ unsigned convert_permission_format(const char * permission) {
     unsigned p_rights = 0u;
     unsigned bit = 1u;
     for(int i=8;i>=0;i--) {
-        if(permission[i] != '-')
+        if(permission[i] != '-') {
             p_rights = p_rights | bit;
+        }
         bit = bit << 1u;
     }
     return p_rights;
@@ -214,11 +215,12 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * max_nr_elem
             abs_entry_path[MAX_PATH_SIZE]='\0';
             // get details about the entry
             lstat(abs_entry_path, &inode);
+            bool condition;
             if(filter) {
                 // filter the files with valid sf format and at least 1 section having exactly 16 lines
                 if(S_ISREG(inode.st_mode)) {
                     // apply filter only to files
-                    bool condition = false;
+                    condition = false;
                     return_value = validate_file_with_filter(abs_entry_path, &condition);
                     if (return_value != SUCCESS) {
                         goto clean_up;
@@ -231,18 +233,17 @@ int list_directory_tree(char * dir_path, char ** dir_elements, int * max_nr_elem
                     }
                 }
             }else {
-                // apply the suffix and permission filters on the elements if they are asserted
-                bool valid_suffix = true;
-                bool valid_permission = true;
+                // apply the suffix or permission filters on the elements if they are asserted
+                condition = true;
                 // check suffix
                 if (detected.suffix)
-                    valid_suffix = validate_file_with_suffix(*entry, suffix);
+                    condition = validate_file_with_suffix(*entry, suffix);
                 // check permission rights
-                if (detected.permission) {
-                    valid_permission = validate_file_with_permission(inode, permission);
+                else if (detected.permission) {
+                    condition = validate_file_with_permission(inode, permission);
                 }
                 // add element to the list if the required conditions are met
-                if(valid_suffix && valid_permission) {
+                if(condition) {
                     dir_elements[*elem_count] = (char *) malloc(sizeof(char) * (MAX_PATH_SIZE + 1));
                     strncpy(dir_elements[*elem_count], abs_entry_path, MAX_PATH_SIZE);
                     (*elem_count)++;
@@ -477,9 +478,10 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
     char file_path[MAX_PATH_SIZE+1];
     int section_nr;
     int line_nr;
+    char * line = NULL;
 
     struct extract_op_parameters detected = {.path = false,.file = false,.section = false,.line=false};
-    enum invalid_sf_extract_param failure_src;
+    enum invalid_sf_extract_param failure_src = NONE_P;
 
     if(nr_parameters < 5) {
         return_value = ERR_MISSING_ARGUMENTS;
@@ -532,8 +534,8 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
     }
 
     // allocate initial size for the line buffer
-    int buf_size = MAX_LINE_LENGTH+1;
-    char * line = (char*)calloc(buf_size,sizeof(char));
+    int buf_size = MAX_LINE_LENGTH + 1;
+    line = (char*)calloc(buf_size,sizeof(char));
     if(line == NULL) {
         return_value = ERR_ALLOCATING_MEMORY;
         goto clean_up;
@@ -549,10 +551,9 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
         }
         printf("\n");
     }
+    clean_up:
     if(line != NULL)
         free(line);
-
-    clean_up:
     if(fd > 0)
         close(fd);
     if(sf_header.section_headers != NULL)
