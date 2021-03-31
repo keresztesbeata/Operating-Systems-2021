@@ -77,7 +77,7 @@ bool validate_file_with_permission(struct stat inode, char * permission);
 int parse_file_header(int fd, struct header * sf_header, enum invalid_sf_field * failure_src);
 void perform_op_parse(int nr_parameters, char ** parameters);
 // extract lines
-int extract_line(int fd, struct header * sf_header, int section_nr, int line_nr, char * line_buf,int * buf_size,enum invalid_sf_extract_param * failure_src);
+int extract_line(int fd, struct header * sf_header, int section_nr, int line_nr, char ** line,int * buf_size,enum invalid_sf_extract_param * failure_src);
 void perform_op_extract(int nr_parameters, char ** parameters);
 // filter lines
 int validate_file_with_filter(char * file_path, bool *valid);
@@ -419,7 +419,7 @@ void perform_op_parse(int nr_parameters, char ** parameters){
     }
 }
 
-int extract_line(int fd, struct header * sf_header, int section_nr, int line_nr, char * line_buf, int * buf_size,enum invalid_sf_extract_param * failure_src){
+int extract_line(int fd, struct header * sf_header, int section_nr, int line_nr, char ** line, int * buf_size,enum invalid_sf_extract_param * failure_src){
     int return_value = SUCCESS;
     *failure_src = NONE_P;
 
@@ -433,41 +433,47 @@ int extract_line(int fd, struct header * sf_header, int section_nr, int line_nr,
         goto finish;
     }
 
-    int line_count = 1;
-    int ch_count = 0;
-    int buf_idx = 0;
-    char ch;
-    int read_return_value;
-    int max_ch_count = sf_header->section_headers[section_nr-1].sect_size;
-    while(ch_count < max_ch_count && line_count <= line_nr && ((read_return_value = read(fd,&ch,1)) > 0)) {
-        if(ch == '\n') {
-            line_count++;
-        }else if(line_count == line_nr) {
-            line_buf[buf_idx] = ch;
-            buf_idx++;
-            if(buf_idx >= *buf_size - 1) {
-                (*buf_size) += MAX_LINE_LENGTH + 1;
-                line_buf = (char *) realloc(line_buf, sizeof(char) * (*buf_size));
-                if (line_buf == NULL) {
-                    return_value = ERR_ALLOCATING_MEMORY;
-                    goto finish;
-                }
-                line_buf[*buf_size-1] = '\0';
-            }
-        }
-        ch_count++;
+    int max_buf_size = sf_header->section_headers[section_nr-1].sect_size;
+    char * buf = (char*)malloc(sizeof(char)*(max_buf_size+1));
+    if(buf == NULL) {
+        return_value = ERR_ALLOCATING_MEMORY;
+        goto clean_up;
     }
-    if(read_return_value == -1) {
+    int ch_read;
+    if(lseek(fd,sf_header->section_headers[section_nr-1].sect_offset,SEEK_SET) < 0) {
         return_value = ERR_READING_FILE;
-        goto finish;
+        goto clean_up;
     }
-    if(ch_count >= max_ch_count && line_count < line_nr) {
-        *failure_src = LINE;
+    // read the whole section
+    if((ch_read = read(fd,buf,max_buf_size)) == -1) {
+        return_value = ERR_READING_FILE;
+        goto clean_up;
+    }
+    buf[ch_read] = '\0';
+
+    int line_count = 1;
+    char * p = strtok(buf,"\n");
+    while(p != NULL && line_count < line_nr) {
+        p = strtok(NULL,"\n");
+        line_count++;
+    }
+    if(line_count == line_nr) {
+        if(p != NULL) {
+            *buf_size = strlen(p);
+            *line = (char*)realloc(*line,(*buf_size)*sizeof(char));
+            if(*line == NULL) {
+                return_value = ERR_ALLOCATING_MEMORY;
+                goto clean_up;
+            }
+            strncpy(*line,p,*buf_size);
+        }
+    }else if(line_count < line_nr){
         return_value = ERR_INVALID_ARGUMENTS;
-        goto finish;
     }
-    line_buf[buf_idx]='\0';
-    (*buf_size) = buf_idx;
+    clean_up:
+    if(buf != NULL) {
+        free(buf);
+    }
     finish:
     return return_value;
 }
@@ -478,7 +484,7 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
     char file_path[MAX_PATH_SIZE+1];
     int section_nr;
     int line_nr;
-    char * line = NULL;
+    char * line;
 
     struct extract_op_parameters detected = {.path = false,.file = false,.section = false,.line=false};
     enum invalid_sf_extract_param failure_src = NONE_P;
@@ -533,16 +539,9 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
         goto clean_up;
     }
 
-    // allocate initial size for the line buffer
-    int buf_size = MAX_LINE_LENGTH + 1;
-    line = (char*)calloc(buf_size,sizeof(char));
-    if(line == NULL) {
-        return_value = ERR_ALLOCATING_MEMORY;
-        goto clean_up;
-    }
-    line[buf_size-1]='\0';
-
-    return_value = extract_line(fd,&sf_header,section_nr,line_nr,line,&buf_size,&failure_src);
+    int buf_size = 0;
+    line = (char*)malloc(sizeof(char));
+    return_value = extract_line(fd,&sf_header,section_nr,line_nr,&line,&buf_size,&failure_src);
 
     if(return_value == SUCCESS && line != NULL) {
         printf("SUCCESS\n");
@@ -551,9 +550,10 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
         }
         printf("\n");
     }
-    clean_up:
     if(line != NULL)
         free(line);
+
+    clean_up:
     if(fd > 0)
         close(fd);
     if(sf_header.section_headers != NULL)
@@ -588,7 +588,11 @@ void perform_op_extract(int nr_parameters, char ** parameters) {
 int count_lines(int fd, struct header * sf_header, int section_nr,long * line_count){
     int return_value = SUCCESS;
     int buf_size = sf_header->section_headers[section_nr-1].sect_size;
-    char buf[buf_size+1];
+    char * buf = (char*)malloc(sizeof(char)*(buf_size+1));
+    if(buf == NULL) {
+        return_value = ERR_ALLOCATING_MEMORY;
+        goto finish;
+    }
     int ch_read;
     if(lseek(fd,sf_header->section_headers[section_nr-1].sect_offset,SEEK_SET) < 0) {
         return_value = ERR_READING_FILE;
@@ -606,6 +610,9 @@ int count_lines(int fd, struct header * sf_header, int section_nr,long * line_co
     }
 
     finish:
+    if(buf != NULL) {
+        free(buf);
+    }
     return return_value;
 }
 
