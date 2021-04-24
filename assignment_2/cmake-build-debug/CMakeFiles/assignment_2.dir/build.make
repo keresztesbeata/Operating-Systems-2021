@@ -76,30 +76,45 @@ include CMakeFiles/assignment_2.dir/progress.make
 # Include the compile flags for this target's objects.
 include CMakeFiles/assignment_2.dir/flags.make
 
-CMakeFiles/assignment_2.dir/main.c.o: CMakeFiles/assignment_2.dir/flags.make
-CMakeFiles/assignment_2.dir/main.c.o: ../main.c
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir="/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/cmake-build-debug/CMakeFiles" --progress-num=$(CMAKE_PROGRESS_1) "Building C object CMakeFiles/assignment_2.dir/main.c.o"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -o CMakeFiles/assignment_2.dir/main.c.o -c "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/main.c"
+CMakeFiles/assignment_2.dir/a2.c.o: CMakeFiles/assignment_2.dir/flags.make
+CMakeFiles/assignment_2.dir/a2.c.o: ../a2.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir="/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/cmake-build-debug/CMakeFiles" --progress-num=$(CMAKE_PROGRESS_1) "Building C object CMakeFiles/assignment_2.dir/a2.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -o CMakeFiles/assignment_2.dir/a2.c.o -c "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/a2.c"
 
-CMakeFiles/assignment_2.dir/main.c.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing C source to CMakeFiles/assignment_2.dir/main.c.i"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/main.c" > CMakeFiles/assignment_2.dir/main.c.i
+CMakeFiles/assignment_2.dir/a2.c.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing C source to CMakeFiles/assignment_2.dir/a2.c.i"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/a2.c" > CMakeFiles/assignment_2.dir/a2.c.i
 
-CMakeFiles/assignment_2.dir/main.c.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling C source to assembly CMakeFiles/assignment_2.dir/main.c.s"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/main.c" -o CMakeFiles/assignment_2.dir/main.c.s
+CMakeFiles/assignment_2.dir/a2.c.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling C source to assembly CMakeFiles/assignment_2.dir/a2.c.s"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/a2.c" -o CMakeFiles/assignment_2.dir/a2.c.s
+
+CMakeFiles/assignment_2.dir/a2_helper.c.o: CMakeFiles/assignment_2.dir/flags.make
+CMakeFiles/assignment_2.dir/a2_helper.c.o: ../a2_helper.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir="/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/cmake-build-debug/CMakeFiles" --progress-num=$(CMAKE_PROGRESS_2) "Building C object CMakeFiles/assignment_2.dir/a2_helper.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -o CMakeFiles/assignment_2.dir/a2_helper.c.o -c "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/a2_helper.c"
+
+CMakeFiles/assignment_2.dir/a2_helper.c.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing C source to CMakeFiles/assignment_2.dir/a2_helper.c.i"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/a2_helper.c" > CMakeFiles/assignment_2.dir/a2_helper.c.i
+
+CMakeFiles/assignment_2.dir/a2_helper.c.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling C source to assembly CMakeFiles/assignment_2.dir/a2_helper.c.s"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/a2_helper.c" -o CMakeFiles/assignment_2.dir/a2_helper.c.s
 
 # Object files for target assignment_2
 assignment_2_OBJECTS = \
-"CMakeFiles/assignment_2.dir/main.c.o"
+"CMakeFiles/assignment_2.dir/a2.c.o" \
+"CMakeFiles/assignment_2.dir/a2_helper.c.o"
 
 # External object files for target assignment_2
 assignment_2_EXTERNAL_OBJECTS =
 
-assignment_2: CMakeFiles/assignment_2.dir/main.c.o
+assignment_2: CMakeFiles/assignment_2.dir/a2.c.o
+assignment_2: CMakeFiles/assignment_2.dir/a2_helper.c.o
 assignment_2: CMakeFiles/assignment_2.dir/build.make
 assignment_2: CMakeFiles/assignment_2.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir="/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/cmake-build-debug/CMakeFiles" --progress-num=$(CMAKE_PROGRESS_2) "Linking C executable assignment_2"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir="/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/cmake-build-debug/CMakeFiles" --progress-num=$(CMAKE_PROGRESS_3) "Linking C executable assignment_2"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/assignment_2.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

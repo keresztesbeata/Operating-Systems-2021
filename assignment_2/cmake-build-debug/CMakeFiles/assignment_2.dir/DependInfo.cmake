@@ -4,7 +4,8 @@ set(CMAKE_DEPENDS_LANGUAGES
   )
 # The set of files for implicit dependencies of each language:
 set(CMAKE_DEPENDS_CHECK_C
-  "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/main.c" "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/cmake-build-debug/CMakeFiles/assignment_2.dir/main.c.o"
+  "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/a2.c" "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/cmake-build-debug/CMakeFiles/assignment_2.dir/a2.c.o"
+  "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/a2_helper.c" "/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/cmake-build-debug/CMakeFiles/assignment_2.dir/a2_helper.c.o"
   )
 set(CMAKE_C_COMPILER_ID "GNU")
 

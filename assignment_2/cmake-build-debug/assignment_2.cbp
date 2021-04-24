@@ -76,7 +76,10 @@
 				</MakeCommands>
 			</Target>
 		</Build>
-		<Unit filename="/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/main.c">
+		<Unit filename="/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/a2.c">
+			<Option target="assignment_2"/>
+		</Unit>
+		<Unit filename="/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/a2_helper.c">
 			<Option target="assignment_2"/>
 		</Unit>
 		<Unit filename="/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/CMakeLists.txt">

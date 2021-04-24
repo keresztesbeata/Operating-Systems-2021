@@ -142,32 +142,59 @@ assignment_2/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/assignment_2.dir/build.make CMakeFiles/assignment_2.dir/build
 .PHONY : assignment_2/fast
 
-main.o: main.c.o
+a2.o: a2.c.o
 
-.PHONY : main.o
+.PHONY : a2.o
 
 # target to build an object file
-main.c.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/assignment_2.dir/build.make CMakeFiles/assignment_2.dir/main.c.o
-.PHONY : main.c.o
+a2.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/assignment_2.dir/build.make CMakeFiles/assignment_2.dir/a2.c.o
+.PHONY : a2.c.o
 
-main.i: main.c.i
+a2.i: a2.c.i
 
-.PHONY : main.i
+.PHONY : a2.i
 
 # target to preprocess a source file
-main.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/assignment_2.dir/build.make CMakeFiles/assignment_2.dir/main.c.i
-.PHONY : main.c.i
+a2.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/assignment_2.dir/build.make CMakeFiles/assignment_2.dir/a2.c.i
+.PHONY : a2.c.i
 
-main.s: main.c.s
+a2.s: a2.c.s
 
-.PHONY : main.s
+.PHONY : a2.s
 
 # target to generate assembly for a file
-main.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/assignment_2.dir/build.make CMakeFiles/assignment_2.dir/main.c.s
-.PHONY : main.c.s
+a2.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/assignment_2.dir/build.make CMakeFiles/assignment_2.dir/a2.c.s
+.PHONY : a2.c.s
+
+a2_helper.o: a2_helper.c.o
+
+.PHONY : a2_helper.o
+
+# target to build an object file
+a2_helper.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/assignment_2.dir/build.make CMakeFiles/assignment_2.dir/a2_helper.c.o
+.PHONY : a2_helper.c.o
+
+a2_helper.i: a2_helper.c.i
+
+.PHONY : a2_helper.i
+
+# target to preprocess a source file
+a2_helper.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/assignment_2.dir/build.make CMakeFiles/assignment_2.dir/a2_helper.c.i
+.PHONY : a2_helper.c.i
+
+a2_helper.s: a2_helper.c.s
+
+.PHONY : a2_helper.s
+
+# target to generate assembly for a file
+a2_helper.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/assignment_2.dir/build.make CMakeFiles/assignment_2.dir/a2_helper.c.s
+.PHONY : a2_helper.c.s
 
 # Help Target
 help:
@@ -178,9 +205,12 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... assignment_2"
-	@echo "... main.o"
-	@echo "... main.i"
-	@echo "... main.s"
+	@echo "... a2.o"
+	@echo "... a2.i"
+	@echo "... a2.s"
+	@echo "... a2_helper.o"
+	@echo "... a2_helper.i"
+	@echo "... a2_helper.s"
 .PHONY : help
 
 
