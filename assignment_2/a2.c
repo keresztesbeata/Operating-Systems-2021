@@ -12,16 +12,15 @@
 #define ERROR_CREATING_PROCESS 1
 #define ERROR_CREATING_THREAD 2
 #define ERROR_JOINING_THREAD 3
-#define ERROR_LOCKS 4
-#define ERROR_COND_VAR 5
-#define ERROR_CREATING_SEMAPHORE 3
+#define ERROR_CREATING_SEMAPHORE 4
 
 #define PRINT_ERROR_CREATING_PROCESS { perror("Cannot create new process."); }
 #define PRINT_ERROR_CREATING_THREAD { perror("Error creating a new thread."); }
 #define PRINT_ERROR_JOINING_THREAD { perror("Error joining a thread."); }
-#define PRINT_ERROR_LOCKS { perror("Error trying to unlock or acquire a lock1."); }
-#define PRINT_ERROR_COND_VAR { perror("Error waiting for or signaling a condition."); }
 #define PRINT_ERROR_CREATING_SEMAPHORE {perror("Error creating the semaphore");exit(ERROR_CREATING_SEMAPHORE);}
+
+#define SEM_START_TH3 "/sema3"
+#define SEM_START_TH4 "/sema4"
 
 typedef struct thread_args{
     int th_id;
@@ -31,21 +30,10 @@ typedef struct thread_args{
 int p_id = 1; // parent's id
 int c_nr = 1; // child count
 
-pthread_mutex_t lock1 = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t lock2 = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t cond_start1 = PTHREAD_COND_INITIALIZER;
-pthread_cond_t cond_end1 = PTHREAD_COND_INITIALIZER;
-pthread_cond_t cond_start2 = PTHREAD_COND_INITIALIZER;
-pthread_cond_t cond_end2 = PTHREAD_COND_INITIALIZER;
-
 sem_t sem_start,sem_end,sem_count;
 sem_t sem_end_after_th2,sem_start_after_th3;
 sem_t *sem_start_th4, *sem_start_th3;
 int nr_running_threads = 0;
-
-#define SEM_START_TH3 "/sema3"
-#define SEM_START_TH4 "/sema4"
-
 
 void create_process(int parent_id) {
     c_nr++;
@@ -108,13 +96,13 @@ int synchronizing_threads_in_same_process(){
     }
     sem_start_th3 = sem_open(SEM_START_TH3,O_CREAT,0600,1);
     if(sem_start_th3 == SEM_FAILED) {
-        printf("error in p3 for 1\n");
-        return -1;
+        error_code = ERROR_CREATING_SEMAPHORE;
+        goto finish;
     }
     sem_start_th4 = sem_open(SEM_START_TH4,O_CREAT,0600,1);
     if(sem_start_th4== SEM_FAILED) {
-        printf("error in p3 for 2\n");
-        return -1;
+        error_code = ERROR_CREATING_SEMAPHORE;
+        goto finish;
     }
     // initialize the thread arguments
     for(int i=0;i<4;i++) {
@@ -134,16 +122,10 @@ int synchronizing_threads_in_same_process(){
             error_code = ERROR_JOINING_THREAD;
             goto finish;
         }
-        else if(status == ERROR_LOCKS) {
-            PRINT_ERROR_LOCKS
-        }else if(status == ERROR_COND_VAR) {
-            PRINT_ERROR_COND_VAR
-        }
     }
     finish:
     sem_destroy(&sem_start_after_th3);
     sem_destroy(&sem_end_after_th2);
-
     return error_code;
 }
 
@@ -232,13 +214,13 @@ int synchronizing_threads_in_diff_processes() {
     thread_args_t th_args[5];
     sem_start_th3 = sem_open(SEM_START_TH3,O_CREAT,0600,1);
     if(sem_start_th3 == SEM_FAILED) {
-        printf("error in p2 for 1\n");
-        return -1;
+        error_code = ERROR_CREATING_SEMAPHORE;
+        goto finish;
     }
     sem_start_th4 = sem_open(SEM_START_TH4,O_CREAT,0600,1);
     if(sem_start_th4== SEM_FAILED) {
-        printf("error in p2 for 2\n");
-        return -1;
+        error_code = ERROR_CREATING_SEMAPHORE;
+        goto finish;
     }
     // initialize the thread arguments
     for(int i=0;i<5;i++) {
@@ -258,18 +240,12 @@ int synchronizing_threads_in_diff_processes() {
             error_code = ERROR_JOINING_THREAD;
             goto finish;
         }
-        else if(status == ERROR_LOCKS) {
-            PRINT_ERROR_LOCKS
-        }else if(status == ERROR_COND_VAR) {
-            PRINT_ERROR_COND_VAR
-        }
     }
     finish:
     sem_close(sem_start_th3);
     sem_close(sem_start_th4);
     return error_code;
 }
-
 
 int main(){
     init();
@@ -290,6 +266,8 @@ int main(){
             PRINT_ERROR_CREATING_THREAD
         }else if(return_code == ERROR_JOINING_THREAD) {
             PRINT_ERROR_JOINING_THREAD
+        }else if(return_code == ERROR_CREATING_SEMAPHORE) {
+            PRINT_ERROR_CREATING_SEMAPHORE
         }
     }
     if(p_id == 3) {
@@ -298,6 +276,8 @@ int main(){
             PRINT_ERROR_CREATING_THREAD
         }else if(return_code == ERROR_JOINING_THREAD) {
             PRINT_ERROR_JOINING_THREAD
+        }else if(return_code == ERROR_CREATING_SEMAPHORE) {
+            PRINT_ERROR_CREATING_SEMAPHORE
         }
     }
 //    if(p_id == 7) {
