@@ -7,6 +7,8 @@
 #include <stdbool.h>
 #include "a2_helper.h"
 #include <semaphore.h>
+#include <fcntl.h>
+
 #define ERROR_CREATING_PROCESS 1
 #define ERROR_CREATING_THREAD 2
 #define ERROR_JOINING_THREAD 3
@@ -38,9 +40,12 @@ pthread_cond_t cond_end2 = PTHREAD_COND_INITIALIZER;
 
 sem_t sem_start,sem_end,sem_count;
 sem_t sem_end_after_th2,sem_start_after_th3;
-bool allowed_to_finish = false;
-bool allowed_to_start = false;
+sem_t *sem_start_th4, *sem_start_th3;
 int nr_running_threads = 0;
+
+#define SEM_START_TH3 "/sema3"
+#define SEM_START_TH4 "/sema4"
+
 
 void create_process(int parent_id) {
     c_nr++;
@@ -69,6 +74,9 @@ void * task_of_threads_in_p3(void * arg) {
     if(th_arg.th_id == 2) { // thread 2 has to start after thread 3
         P(&sem_start_after_th3);
     }
+    if(th_arg.th_id == 4) { // thread 4 has to start after thread 2 from P2
+        P(sem_start_th4);
+    }
     info(BEGIN, th_arg.pr_id, th_arg.th_id);
     if(th_arg.th_id == 3) {
         V(&sem_start_after_th3);
@@ -79,6 +87,9 @@ void * task_of_threads_in_p3(void * arg) {
     info(END, th_arg.pr_id, th_arg.th_id);
     if(th_arg.th_id == 2) {
         V(&sem_end_after_th2);
+    }
+    if(th_arg.th_id == 4) { // when thread 4 finishes it must signal thread 3 from P2 to start
+        V(sem_start_th3);
     }
     return 0;
 }
@@ -94,6 +105,16 @@ int synchronizing_threads_in_same_process(){
     if (sem_init(&sem_end_after_th2, 1, 0) < 0) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
+    }
+    sem_start_th3 = sem_open(SEM_START_TH3,O_CREAT,0600,1);
+    if(sem_start_th3 == SEM_FAILED) {
+        printf("error in p3 for 1\n");
+        return -1;
+    }
+    sem_start_th4 = sem_open(SEM_START_TH4,O_CREAT,0600,1);
+    if(sem_start_th4== SEM_FAILED) {
+        printf("error in p3 for 2\n");
+        return -1;
     }
     // initialize the thread arguments
     for(int i=0;i<4;i++) {
@@ -122,17 +143,18 @@ int synchronizing_threads_in_same_process(){
     finish:
     sem_destroy(&sem_start_after_th3);
     sem_destroy(&sem_end_after_th2);
+
     return error_code;
 }
 
 void * task_of_threads_in_p7(void * arg) {
     thread_args_t th_arg = *(thread_args_t*)arg;
     P(&sem_start);
-
+    info(BEGIN, th_arg.pr_id, th_arg.th_id);
     P(&sem_count);
     nr_running_threads++;
     V(&sem_count);
-    info(BEGIN, th_arg.pr_id, th_arg.th_id);
+
     if(nr_running_threads == 4) {
         V(&sem_end);
     }
@@ -186,9 +208,68 @@ int threads_barrier() {
     finish:
     sem_destroy(&sem_start);
     sem_destroy(&sem_end);
-//    sem_destroy(&sem_count);
+    sem_destroy(&sem_count);
     return error_code;
 }
+
+void * task_of_threads_in_p2(void * arg) {
+    thread_args_t th_arg = *(thread_args_t*)arg;
+    if(th_arg.th_id == 3) { // thread 3 must start after thread 4 from P3 finishes
+        P(sem_start_th3);
+    }
+    info(BEGIN, th_arg.pr_id, th_arg.th_id);
+
+    info(END, th_arg.pr_id, th_arg.th_id);
+    if(th_arg.th_id == 2) { // thread 2 has to signal thread 4 from P3 to start
+        V(sem_start_th4);
+    }
+    return 0;
+}
+
+int synchronizing_threads_in_diff_processes() {
+    int error_code = 0;
+    pthread_t th[5];
+    thread_args_t th_args[5];
+    sem_start_th3 = sem_open(SEM_START_TH3,O_CREAT,0600,1);
+    if(sem_start_th3 == SEM_FAILED) {
+        printf("error in p2 for 1\n");
+        return -1;
+    }
+    sem_start_th4 = sem_open(SEM_START_TH4,O_CREAT,0600,1);
+    if(sem_start_th4== SEM_FAILED) {
+        printf("error in p2 for 2\n");
+        return -1;
+    }
+    // initialize the thread arguments
+    for(int i=0;i<5;i++) {
+        th_args[i].pr_id = 2;
+        th_args[i].th_id = i+1;
+    }
+    // create the threads
+    for(int i=0;i<5;i++) {
+        if (pthread_create(&th[i], NULL, task_of_threads_in_p2, &th_args[i]) != 0) {
+            error_code = ERROR_CREATING_THREAD;
+        }
+    }
+    // join the created threads
+    for(int i=0;i<5;i++) {
+        int status = 0;
+        if(pthread_join(th[i], (void *)&status) != 0) {
+            error_code = ERROR_JOINING_THREAD;
+            goto finish;
+        }
+        else if(status == ERROR_LOCKS) {
+            PRINT_ERROR_LOCKS
+        }else if(status == ERROR_COND_VAR) {
+            PRINT_ERROR_COND_VAR
+        }
+    }
+    finish:
+    sem_close(sem_start_th3);
+    sem_close(sem_start_th4);
+    return error_code;
+}
+
 
 int main(){
     init();
@@ -203,6 +284,14 @@ int main(){
     create_process(4);
     create_process(6);
 
+    if(p_id == 2) {
+        int return_code = synchronizing_threads_in_diff_processes();
+        if(return_code == ERROR_CREATING_THREAD) {
+            PRINT_ERROR_CREATING_THREAD
+        }else if(return_code == ERROR_JOINING_THREAD) {
+            PRINT_ERROR_JOINING_THREAD
+        }
+    }
     if(p_id == 3) {
         int return_code = synchronizing_threads_in_same_process();
         if(return_code == ERROR_CREATING_THREAD) {
@@ -211,14 +300,14 @@ int main(){
             PRINT_ERROR_JOINING_THREAD
         }
     }
-    if(p_id == 7) {
-        int return_code = threads_barrier();
-        if(return_code == ERROR_CREATING_THREAD) {
-            PRINT_ERROR_CREATING_THREAD
-        }else if(return_code == ERROR_JOINING_THREAD) {
-            PRINT_ERROR_JOINING_THREAD
-        }
-    }
+//    if(p_id == 7) {
+//        int return_code = threads_barrier();
+//        if(return_code == ERROR_CREATING_THREAD) {
+//            PRINT_ERROR_CREATING_THREAD
+//        }else if(return_code == ERROR_JOINING_THREAD) {
+//            PRINT_ERROR_JOINING_THREAD
+//        }
+//    }
     // wait for the child processes to terminate
     while(wait(&return_status) > 0) {
         c_nr--;
