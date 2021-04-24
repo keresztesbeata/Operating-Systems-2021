@@ -1,0 +1,3 @@
+/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/cmake-build-debug/CMakeFiles/assignment_2.dir
