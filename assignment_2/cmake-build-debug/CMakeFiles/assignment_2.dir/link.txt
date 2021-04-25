@@ -1,1 +1,1 @@
-/usr/bin/cc -g CMakeFiles/assignment_2.dir/a2.c.o CMakeFiles/assignment_2.dir/a2_helper.c.o -o assignment_2 
+/usr/bin/cc -g CMakeFiles/assignment_2.dir/a2.c.o CMakeFiles/assignment_2.dir/a2_helper.c.o CMakeFiles/assignment_2.dir/a2_with_cond_vars.c.o -o assignment_2 

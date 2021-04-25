@@ -8,6 +8,7 @@
 #include "a2_helper.h"
 #include <semaphore.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #define ERROR_CREATING_PROCESS 1
 #define ERROR_CREATING_THREAD 2
@@ -17,7 +18,7 @@
 #define PRINT_ERROR_CREATING_PROCESS { perror("Cannot create new process."); }
 #define PRINT_ERROR_CREATING_THREAD { perror("Error creating a new thread."); }
 #define PRINT_ERROR_JOINING_THREAD { perror("Error joining a thread."); }
-#define PRINT_ERROR_CREATING_SEMAPHORE {perror("Error creating the semaphore");exit(ERROR_CREATING_SEMAPHORE);}
+#define PRINT_ERROR_CREATING_SEMAPHORE {perror("Error creating the semaphore");}
 
 #define SEM_START_TH3 "/sema3"
 #define SEM_START_TH4 "/sema4"
@@ -30,7 +31,7 @@ typedef struct thread_args{
 int p_id = 1; // parent's id
 int c_nr = 1; // child count
 
-sem_t sem_start,sem_end,sem_count;
+sem_t sem_enter,sem_leave,sem_incr;
 sem_t sem_end_after_th2,sem_start_after_th3;
 sem_t *sem_start_th4, *sem_start_th3;
 int nr_running_threads = 0;
@@ -94,12 +95,12 @@ int synchronizing_threads_in_same_process(){
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
-    sem_start_th3 = sem_open(SEM_START_TH3,O_CREAT,0600,1);
+    sem_start_th3 = sem_open(SEM_START_TH3,O_CREAT);
     if(sem_start_th3 == SEM_FAILED) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
-    sem_start_th4 = sem_open(SEM_START_TH4,O_CREAT,0600,1);
+    sem_start_th4 = sem_open(SEM_START_TH4,O_CREAT);
     if(sem_start_th4== SEM_FAILED) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
@@ -129,25 +130,46 @@ int synchronizing_threads_in_same_process(){
     return error_code;
 }
 
+bool enable = false;
 void * task_of_threads_in_p7(void * arg) {
     thread_args_t th_arg = *(thread_args_t*)arg;
-    P(&sem_start);
-    info(BEGIN, th_arg.pr_id, th_arg.th_id);
-    P(&sem_count);
-    nr_running_threads++;
-    V(&sem_count);
+    // threads that cannot enter will unblock the others
+    if(enable && nr_running_threads == 4) {
+        printf("posted = %d\n",nr_running_threads);
+        V(&sem_leave);
+    }
 
-    if(nr_running_threads == 4) {
-        V(&sem_end);
-    }
+    P(&sem_enter);
+    info(BEGIN, th_arg.pr_id, th_arg.th_id);
+
+    P(&sem_incr);
+    nr_running_threads++;
+    V(&sem_incr);
+
     if(th_arg.th_id == 15 && nr_running_threads < 4) {
-        P(&sem_end);
+        enable = true;
+        P(&sem_leave);
     }
-    info(END, th_arg.pr_id, th_arg.th_id);
-    P(&sem_count);
+
+    if(th_arg.th_id != 15 && enable) {
+        // if thread 15 is inside, they cannot leave
+       P(&sem_leave);
+    }
+
+    P(&sem_incr);
     nr_running_threads--;
-    V(&sem_count);
-    V(&sem_start);
+    V(&sem_incr);
+
+    info(END, th_arg.pr_id, th_arg.th_id);
+
+    if(th_arg.th_id == 15) {
+        for(int i=0;i<3;i++) {
+            // free all the blocked threads after 15
+            V(&sem_leave);
+        }
+        enable = false;
+    }
+    V(&sem_enter);
     return 0;
 }
 
@@ -156,15 +178,15 @@ int threads_barrier() {
     pthread_t th[38];
     thread_args_t th_args[38];
     // create and initialize the semaphores
-    if (sem_init(&sem_start, 1, 4) < 0) {
+    if (sem_init(&sem_enter, 1, 4) < 0) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
-    if (sem_init(&sem_end, 1, 0) < 0) {
+    if (sem_init(&sem_leave, 1, 0) < 1) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
-    if (sem_init(&sem_count, 1, 1) < 0) {
+    if (sem_init(&sem_incr, 1, 1) < 0) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
@@ -173,6 +195,7 @@ int threads_barrier() {
         th_args[i].pr_id = 7;
         th_args[i].th_id = i+1;
     }
+
     // create the threads
     for(int i=0;i<38;i++) {
         if (pthread_create(&th[i], NULL, task_of_threads_in_p7, &th_args[i]) != 0) {
@@ -188,9 +211,9 @@ int threads_barrier() {
         }
     }
     finish:
-    sem_destroy(&sem_start);
-    sem_destroy(&sem_end);
-    sem_destroy(&sem_count);
+    sem_destroy(&sem_enter);
+    sem_destroy(&sem_leave);
+    sem_destroy(&sem_incr);
     return error_code;
 }
 
@@ -212,12 +235,12 @@ int synchronizing_threads_in_diff_processes() {
     int error_code = 0;
     pthread_t th[5];
     thread_args_t th_args[5];
-    sem_start_th3 = sem_open(SEM_START_TH3,O_CREAT,0600,1);
+    sem_start_th3 = sem_open(SEM_START_TH3,O_CREAT,0600,0);
     if(sem_start_th3 == SEM_FAILED) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
-    sem_start_th4 = sem_open(SEM_START_TH4,O_CREAT,0600,1);
+    sem_start_th4 = sem_open(SEM_START_TH4,O_CREAT,0600,0);
     if(sem_start_th4== SEM_FAILED) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
@@ -286,6 +309,8 @@ int main(){
 //            PRINT_ERROR_CREATING_THREAD
 //        }else if(return_code == ERROR_JOINING_THREAD) {
 //            PRINT_ERROR_JOINING_THREAD
+//        }else if(return_code == ERROR_CREATING_SEMAPHORE) {
+//            PRINT_ERROR_CREATING_SEMAPHORE
 //        }
 //    }
     // wait for the child processes to terminate

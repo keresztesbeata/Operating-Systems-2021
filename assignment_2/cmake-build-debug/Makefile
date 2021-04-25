@@ -196,6 +196,33 @@ a2_helper.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/assignment_2.dir/build.make CMakeFiles/assignment_2.dir/a2_helper.c.s
 .PHONY : a2_helper.c.s
 
+a2_with_cond_vars.o: a2_with_cond_vars.c.o
+
+.PHONY : a2_with_cond_vars.o
+
+# target to build an object file
+a2_with_cond_vars.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/assignment_2.dir/build.make CMakeFiles/assignment_2.dir/a2_with_cond_vars.c.o
+.PHONY : a2_with_cond_vars.c.o
+
+a2_with_cond_vars.i: a2_with_cond_vars.c.i
+
+.PHONY : a2_with_cond_vars.i
+
+# target to preprocess a source file
+a2_with_cond_vars.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/assignment_2.dir/build.make CMakeFiles/assignment_2.dir/a2_with_cond_vars.c.i
+.PHONY : a2_with_cond_vars.c.i
+
+a2_with_cond_vars.s: a2_with_cond_vars.c.s
+
+.PHONY : a2_with_cond_vars.s
+
+# target to generate assembly for a file
+a2_with_cond_vars.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/assignment_2.dir/build.make CMakeFiles/assignment_2.dir/a2_with_cond_vars.c.s
+.PHONY : a2_with_cond_vars.c.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -211,6 +238,9 @@ help:
 	@echo "... a2_helper.o"
 	@echo "... a2_helper.i"
 	@echo "... a2_helper.s"
+	@echo "... a2_with_cond_vars.o"
+	@echo "... a2_with_cond_vars.i"
+	@echo "... a2_with_cond_vars.s"
 .PHONY : help
 
 

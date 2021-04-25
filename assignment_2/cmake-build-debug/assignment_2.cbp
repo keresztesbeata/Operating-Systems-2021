@@ -82,6 +82,12 @@
 		<Unit filename="/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/a2_helper.c">
 			<Option target="assignment_2"/>
 		</Unit>
+		<Unit filename="/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/a2_helper.h">
+			<Option target="assignment_2"/>
+		</Unit>
+		<Unit filename="/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/a2_with_cond_vars.c">
+			<Option target="assignment_2"/>
+		</Unit>
 		<Unit filename="/home/beata/Documents/Bea dolgai/university/AC2/sem2/operating_systems/Operating-Systems-2021/assignment_2/CMakeLists.txt">
 			<Option virtualFolder="CMake Files\"/>
 		</Unit>
