@@ -23,6 +23,11 @@
 #define SEM_START_TH3 "/sema3"
 #define SEM_START_TH4 "/sema4"
 
+#define SEM_ENTER "/sem_enter"
+#define SEM_LEAVE "/sem_leave"
+#define SEM_STAY "/sem_stay"
+#define SEM_COUNT "/sem_count"
+
 typedef struct thread_args{
     int th_id;
     int pr_id;
@@ -31,10 +36,9 @@ typedef struct thread_args{
 int p_id = 1; // parent's id
 int c_nr = 1; // child count
 
-sem_t sem_enter,sem_leave,sem_incr;
 sem_t sem_end_after_th2,sem_start_after_th3;
+sem_t *sem_enter,*sem_leave,*sem_stay,*sem_count;
 sem_t *sem_start_th4, *sem_start_th3;
-int nr_running_threads = 0;
 
 void create_process(int parent_id) {
     c_nr++;
@@ -95,12 +99,12 @@ int synchronizing_threads_in_same_process(){
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
-    sem_start_th3 = sem_open(SEM_START_TH3,O_CREAT);
+    sem_start_th3 = sem_open(SEM_START_TH3,O_CREAT,0600,0);
     if(sem_start_th3 == SEM_FAILED) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
-    sem_start_th4 = sem_open(SEM_START_TH4,O_CREAT);
+    sem_start_th4 = sem_open(SEM_START_TH4,O_CREAT,0600,0);
     if(sem_start_th4== SEM_FAILED) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
@@ -130,46 +134,39 @@ int synchronizing_threads_in_same_process(){
     return error_code;
 }
 
-bool enable = false;
+bool allow_to_leave = true;
+
 void * task_of_threads_in_p7(void * arg) {
     thread_args_t th_arg = *(thread_args_t*)arg;
-    // threads that cannot enter will unblock the others
-    if(enable && nr_running_threads == 4) {
-        printf("posted = %d\n",nr_running_threads);
-        V(&sem_leave);
+    int value;
+    sem_getvalue(sem_count,&value);
+    if(!allow_to_leave && value >= 3) {
+        //printf("you can leave now\n");
+        V(sem_leave);
     }
-
-    P(&sem_enter);
+    P(sem_enter);
+    // at most 4 threads can enter at a time
     info(BEGIN, th_arg.pr_id, th_arg.th_id);
-
-    P(&sem_incr);
-    nr_running_threads++;
-    V(&sem_incr);
-
-    if(th_arg.th_id == 15 && nr_running_threads < 4) {
-        enable = true;
-        P(&sem_leave);
+    if(th_arg.th_id == 15) {
+        allow_to_leave = false;
+        P(sem_leave);
     }
 
-    if(th_arg.th_id != 15 && enable) {
-        // if thread 15 is inside, they cannot leave
-       P(&sem_leave);
+    if(th_arg.th_id != 15 && !allow_to_leave) {
+        //printf("thread %d is blocked\n",th_arg.th_id);
+        V(sem_count);
+        P(sem_leave);
+       // printf("t %d signal for the next to leave\n",th_arg.th_id);
+        V(sem_leave);
     }
-
-    P(&sem_incr);
-    nr_running_threads--;
-    V(&sem_incr);
-
     info(END, th_arg.pr_id, th_arg.th_id);
 
     if(th_arg.th_id == 15) {
-        for(int i=0;i<3;i++) {
-            // free all the blocked threads after 15
-            V(&sem_leave);
-        }
-        enable = false;
+        allow_to_leave = true;
+        V(sem_leave);
     }
-    V(&sem_enter);
+
+    V(sem_enter);
     return 0;
 }
 
@@ -178,19 +175,32 @@ int threads_barrier() {
     pthread_t th[38];
     thread_args_t th_args[38];
     // create and initialize the semaphores
-    if (sem_init(&sem_enter, 1, 4) < 0) {
+    sem_enter = sem_open(SEM_ENTER, O_CREAT, 0600, 4);
+    if (sem_enter == SEM_FAILED) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
-    if (sem_init(&sem_leave, 1, 0) < 1) {
+    int value;
+    sem_getvalue(sem_enter,&value);
+    printf("value sem_enter = %d\n",value);
+
+    sem_leave = sem_open(SEM_LEAVE, O_CREAT, 0600, 0);
+    if (sem_leave == SEM_FAILED) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
-    if (sem_init(&sem_incr, 1, 1) < 0) {
+    sem_getvalue(sem_leave,&value);
+    printf("value sem_leave= %d\n",value);
+
+    sem_count= sem_open(SEM_COUNT, O_CREAT, 0600, 0);
+    if (sem_count == SEM_FAILED) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
-    // initialize the thread arguments
+    sem_getvalue(sem_count,&value);
+    printf("value sem_count= %d\n",value);
+
+   //  initialize the thread arguments
     for(int i=0;i<38;i++) {
         th_args[i].pr_id = 7;
         th_args[i].th_id = i+1;
@@ -211,9 +221,9 @@ int threads_barrier() {
         }
     }
     finish:
-    sem_destroy(&sem_enter);
-    sem_destroy(&sem_leave);
-    sem_destroy(&sem_incr);
+    sem_unlink(SEM_ENTER);
+    sem_unlink(SEM_LEAVE);
+    sem_unlink(SEM_COUNT);
     return error_code;
 }
 
@@ -283,28 +293,8 @@ int main(){
     create_process(4);
     create_process(6);
 
-    if(p_id == 2) {
-        int return_code = synchronizing_threads_in_diff_processes();
-        if(return_code == ERROR_CREATING_THREAD) {
-            PRINT_ERROR_CREATING_THREAD
-        }else if(return_code == ERROR_JOINING_THREAD) {
-            PRINT_ERROR_JOINING_THREAD
-        }else if(return_code == ERROR_CREATING_SEMAPHORE) {
-            PRINT_ERROR_CREATING_SEMAPHORE
-        }
-    }
-    if(p_id == 3) {
-        int return_code = synchronizing_threads_in_same_process();
-        if(return_code == ERROR_CREATING_THREAD) {
-            PRINT_ERROR_CREATING_THREAD
-        }else if(return_code == ERROR_JOINING_THREAD) {
-            PRINT_ERROR_JOINING_THREAD
-        }else if(return_code == ERROR_CREATING_SEMAPHORE) {
-            PRINT_ERROR_CREATING_SEMAPHORE
-        }
-    }
-//    if(p_id == 7) {
-//        int return_code = threads_barrier();
+//    if(p_id == 2) {
+//        int return_code = synchronizing_threads_in_diff_processes();
 //        if(return_code == ERROR_CREATING_THREAD) {
 //            PRINT_ERROR_CREATING_THREAD
 //        }else if(return_code == ERROR_JOINING_THREAD) {
@@ -313,6 +303,26 @@ int main(){
 //            PRINT_ERROR_CREATING_SEMAPHORE
 //        }
 //    }
+//    if(p_id == 3) {
+//        int return_code = synchronizing_threads_in_same_process();
+//        if(return_code == ERROR_CREATING_THREAD) {
+//            PRINT_ERROR_CREATING_THREAD
+//        }else if(return_code == ERROR_JOINING_THREAD) {
+//            PRINT_ERROR_JOINING_THREAD
+//        }else if(return_code == ERROR_CREATING_SEMAPHORE) {
+//            PRINT_ERROR_CREATING_SEMAPHORE
+//        }
+//    }
+    if(p_id == 7) {
+        int return_code = threads_barrier();
+        if(return_code == ERROR_CREATING_THREAD) {
+            PRINT_ERROR_CREATING_THREAD
+        }else if(return_code == ERROR_JOINING_THREAD) {
+            PRINT_ERROR_JOINING_THREAD
+        }else if(return_code == ERROR_CREATING_SEMAPHORE) {
+            PRINT_ERROR_CREATING_SEMAPHORE
+        }
+    }
     // wait for the child processes to terminate
     while(wait(&return_status) > 0) {
         c_nr--;
