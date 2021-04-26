@@ -23,11 +23,6 @@
 #define SEM_START_TH3 "/sema3"
 #define SEM_START_TH4 "/sema4"
 
-//#define SEM_ENTER "/sem_enter"
-//#define SEM_LEAVE "/sem_leave"
-//#define SEM_STAY "/sem_barrier"
-//#define SEM_COUNT "/sem_count"
-
 typedef struct thread_args{
     int th_id;
     int pr_id;
@@ -37,7 +32,7 @@ int p_id = 1; // parent's id
 int c_nr = 1; // child count
 
 sem_t sem_end_after_th2,sem_start_after_th3;
-sem_t sem_enter,sem_leave,sem_barrier,sem_count;
+sem_t sem_enter,sem_leave,sem_barrier,sem_allow;
 sem_t *sem_start_th4, *sem_start_th3;
 
 void create_process(int parent_id) {
@@ -134,41 +129,49 @@ int synchronizing_threads_in_same_process(){
     return error_code;
 }
 
-bool allow_to_leave = true;
+bool allowed_to_enter = false;
 
 void * task_of_threads_in_p7(void * arg) {
     thread_args_t th_arg = *(thread_args_t*)arg;
-    P(&sem_enter);
+    // threads who attempt to enter before thread 15 are blocked
+    if(th_arg.th_id != 15 && !allowed_to_enter) {
+        P(&sem_allow);
+    }
+    // unblock the next waiting thread
+    V(&sem_allow);
     // at most 4 threads can enter at a time
+    P(&sem_enter);
     info(BEGIN, th_arg.pr_id, th_arg.th_id);
-    // block thread 15 until the room is full
-    if(th_arg.th_id == 15) {
-        allow_to_leave = false;
-        P(&sem_leave);
-    }
-    // the other 3 threads after 15 should be blocked too
-    if(th_arg.th_id != 15 && !allow_to_leave) {
-        V(&sem_count); // event counter, counts how many threads have entered after 15
-        // the last one will unblock thread 15 first
-        int value;
-        sem_getvalue(&sem_count,&value);
-        if(value >= 3) {
-            // signal thread 15 that it is now safe to leave the room
-            V(&sem_leave);
-        }
-        P(&sem_barrier);
-        V(&sem_barrier); // unblock the next waiting thread
-    }
-    info(END, th_arg.pr_id, th_arg.th_id);
 
     if(th_arg.th_id == 15) {
-        allow_to_leave = true;
+        allowed_to_enter = true;
+        // allow the next 3 threads to enter the room
+        V(&sem_allow);
+        // wait until the room is full
+        P(&sem_leave);
+    }
+
+    if(th_arg.th_id != 15) {
+        int value;
+        sem_getvalue(&sem_enter,&value);
+        // check if all permissions were taken <=> there are already 4 threads inside together with thread 15
+        if(value <= 0) {
+            // signal thread 15 to leave the room
+            V(&sem_leave);
+        }
+        // remains blocked until thread 15 lifts the barrier
+        P(&sem_barrier);
+        // unblock the next waiting thread
+        V(&sem_barrier);
+    }
+    info(END, th_arg.pr_id, th_arg.th_id);
+    if(th_arg.th_id == 15) {
+        // lift the barrier after leaving the room
         V(&sem_barrier);
     }
     V(&sem_enter);
     return 0;
 }
-
 int threads_barrier() {
     int error_code = 0;
     pthread_t th[38];
@@ -188,7 +191,7 @@ int threads_barrier() {
         goto finish;
     }
 
-    if (sem_init(&sem_count, 1, 0) < 0) {
+    if (sem_init(&sem_allow, 1, 0) < 0) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
@@ -198,6 +201,7 @@ int threads_barrier() {
         th_args[i].pr_id = 7;
         th_args[i].th_id = i+1;
     }
+
     // create the threads
     for(int i=0;i<38;i++) {
         if (pthread_create(&th[i], NULL, task_of_threads_in_p7, &th_args[i]) != 0) {
@@ -216,7 +220,7 @@ int threads_barrier() {
     sem_destroy(&sem_enter);
     sem_destroy(&sem_leave);
     sem_destroy(&sem_barrier);
-    sem_destroy(&sem_count);
+    sem_destroy(&sem_allow);
     return error_code;
 }
 
@@ -288,26 +292,26 @@ int main(){
     create_process(4);
     create_process(6);
 
-    if(p_id == 2) {
-        int return_code = synchronizing_threads_in_diff_processes();
-        if(return_code == ERROR_CREATING_THREAD) {
-            PRINT_ERROR_CREATING_THREAD
-        }else if(return_code == ERROR_JOINING_THREAD) {
-            PRINT_ERROR_JOINING_THREAD
-        }else if(return_code == ERROR_CREATING_SEMAPHORE) {
-            PRINT_ERROR_CREATING_SEMAPHORE
-        }
-    }
-    if(p_id == 3) {
-        int return_code = synchronizing_threads_in_same_process();
-        if(return_code == ERROR_CREATING_THREAD) {
-            PRINT_ERROR_CREATING_THREAD
-        }else if(return_code == ERROR_JOINING_THREAD) {
-            PRINT_ERROR_JOINING_THREAD
-        }else if(return_code == ERROR_CREATING_SEMAPHORE) {
-            PRINT_ERROR_CREATING_SEMAPHORE
-        }
-    }
+//    if(p_id == 2) {
+//        int return_code = synchronizing_threads_in_diff_processes();
+//        if(return_code == ERROR_CREATING_THREAD) {
+//            PRINT_ERROR_CREATING_THREAD
+//        }else if(return_code == ERROR_JOINING_THREAD) {
+//            PRINT_ERROR_JOINING_THREAD
+//        }else if(return_code == ERROR_CREATING_SEMAPHORE) {
+//            PRINT_ERROR_CREATING_SEMAPHORE
+//        }
+//    }
+//    if(p_id == 3) {
+//        int return_code = synchronizing_threads_in_same_process();
+//        if(return_code == ERROR_CREATING_THREAD) {
+//            PRINT_ERROR_CREATING_THREAD
+//        }else if(return_code == ERROR_JOINING_THREAD) {
+//            PRINT_ERROR_JOINING_THREAD
+//        }else if(return_code == ERROR_CREATING_SEMAPHORE) {
+//            PRINT_ERROR_CREATING_SEMAPHORE
+//        }
+//    }
     if(p_id == 7) {
         int return_code = threads_barrier();
         if(return_code == ERROR_CREATING_THREAD) {
