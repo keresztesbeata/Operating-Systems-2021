@@ -153,9 +153,9 @@ void * task_of_threads_in_p7(void * arg) {
     // threads who attempt to enter before thread 15 are blocked
     if(th_arg.th_id != 15) {
         P(&sem_enter);
+        // unblock the next waiting thread
+        V(&sem_enter);
     }
-    // unblock the next waiting thread
-    V(&sem_enter);
     // at most 4 threads can enter at a time
     P(&sem_limit);
     info(BEGIN, th_arg.pr_id, th_arg.th_id);
