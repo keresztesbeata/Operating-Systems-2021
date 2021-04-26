@@ -23,10 +23,10 @@
 #define SEM_START_TH3 "/sema3"
 #define SEM_START_TH4 "/sema4"
 
-#define SEM_ENTER "/sem_enter"
-#define SEM_LEAVE "/sem_leave"
-#define SEM_STAY "/sem_barrier"
-#define SEM_COUNT "/sem_count"
+//#define SEM_ENTER "/sem_enter"
+//#define SEM_LEAVE "/sem_leave"
+//#define SEM_STAY "/sem_barrier"
+//#define SEM_COUNT "/sem_count"
 
 typedef struct thread_args{
     int th_id;
@@ -146,23 +146,17 @@ void * task_of_threads_in_p7(void * arg) {
         allow_to_leave = false;
         P(&sem_leave);
     }
-   // printf("allowed to leave = %d\n",allow_to_leave);
-    // the other threads after 15 should be blocked too
+    // the other 3 threads after 15 should be blocked too
     if(th_arg.th_id != 15 && !allow_to_leave) {
-       //   printf("thread %d is blocked\n",th_arg.th_id);
         V(&sem_count); // event counter, counts how many threads have entered after 15
         // the last one will unblock thread 15 first
         int value;
         sem_getvalue(&sem_count,&value);
-      //  printf("allowed to leave = %d\n",allow_to_leave);
-      //  printf("count = %d\n",value);
         if(value >= 3) {
             // signal thread 15 that it is now safe to leave the room
-        //     printf("you can leave now\n");
             V(&sem_leave);
         }
         P(&sem_barrier);
-       //  printf("t %d signal for the next to leave\n",th_arg.th_id);
         V(&sem_barrier); // unblock the next waiting thread
     }
     info(END, th_arg.pr_id, th_arg.th_id);
@@ -171,7 +165,6 @@ void * task_of_threads_in_p7(void * arg) {
         allow_to_leave = true;
         V(&sem_barrier);
     }
-
     V(&sem_enter);
     return 0;
 }
@@ -184,46 +177,31 @@ int threads_barrier() {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
-    int value;
-    sem_getvalue(&sem_enter,&value);
-    printf("value = %d\n",value);
 
     if (sem_init(&sem_leave, 1, 0) < 0) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
-    sem_getvalue(&sem_leave,&value);
-    printf("value = %d\n",value);
 
     if (sem_init(&sem_barrier, 1, 0) < 0) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
-    sem_getvalue(&sem_barrier,&value);
-    printf("value = %d\n",value);
 
     if (sem_init(&sem_count, 1, 0) < 0) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
-    sem_getvalue(&sem_count,&value);
-    printf("value = %d\n",value);
-
 
     // initialize the thread arguments
     for(int i=0;i<38;i++) {
         th_args[i].pr_id = 7;
         th_args[i].th_id = i+1;
     }
-    if (pthread_create(&th[14], NULL, task_of_threads_in_p7, &th_args[14]) != 0) {
-        error_code = ERROR_CREATING_THREAD;
-    }
     // create the threads
     for(int i=0;i<38;i++) {
-        if(i!=14) {
-            if (pthread_create(&th[i], NULL, task_of_threads_in_p7, &th_args[i]) != 0) {
-                error_code = ERROR_CREATING_THREAD;
-            }
+        if (pthread_create(&th[i], NULL, task_of_threads_in_p7, &th_args[i]) != 0) {
+            error_code = ERROR_CREATING_THREAD;
         }
     }
     // join the created threads
