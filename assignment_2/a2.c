@@ -37,8 +37,8 @@ sem_t *sem_start_th3;
 // semaphores used by process 7
 sem_t sem_limit;
 sem_t sem_leave;
-sem_t sem_barrier;
-sem_t sem_enter;
+sem_t sem_exit_barrier;
+sem_t sem_enter_barrier;
 
 /*
  * Lets the process with the given process id to create a new child process.
@@ -150,19 +150,21 @@ int synchronizing_threads_in_same_process(){
 
 void * task_of_threads_in_p7(void * arg) {
     thread_args_t th_arg = *(thread_args_t*)arg;
-    // threads who attempt to enter before thread 15 are blocked
+
     if(th_arg.th_id != 15) {
-        P(&sem_enter);
+        // threads who attempt to enter before thread 15 are blocked
+        P(&sem_enter_barrier);
         // unblock the next waiting thread
-        V(&sem_enter);
+        V(&sem_enter_barrier);
     }
     // at most 4 threads can enter at a time
     P(&sem_limit);
+
     info(BEGIN, th_arg.pr_id, th_arg.th_id);
 
     if(th_arg.th_id == 15) {
         // allow the next 3 threads to enter the room
-        V(&sem_enter);
+        V(&sem_enter_barrier);
         // wait until the room is full
         P(&sem_leave);
     }
@@ -175,16 +177,15 @@ void * task_of_threads_in_p7(void * arg) {
             // signal thread 15 to leave the room
             V(&sem_leave);
         }
-        // remains blocked until thread 15 lifts the barrier
-        P(&sem_barrier);
-        // unblock the next waiting thread
-        V(&sem_barrier);
+        // the barrier stops the thread from exiting
+        P(&sem_exit_barrier);
     }
+
     info(END, th_arg.pr_id, th_arg.th_id);
-    if(th_arg.th_id == 15) {
-        // lift the barrier after leaving the room
-        V(&sem_barrier);
-    }
+
+    // lift the barrier for the next thread as well
+    V(&sem_exit_barrier);
+
     V(&sem_limit);
     return 0;
 }
@@ -204,13 +205,13 @@ int threads_barrier() {
         goto finish;
     }
     // create semaphore for blocking the threads entering after thread 15, so that they wouldn't leave before 15
-    if (sem_init(&sem_barrier, 1, 0) < 0) {
+    if (sem_init(&sem_exit_barrier, 1, 0) < 0) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
     // create a semaphore for blocking the threads that try to enter before thread 15, so that when th 15 enters there
     // would always be at least another 3 threads to unblock it
-    if (sem_init(&sem_enter, 1, 0) < 0) {
+    if (sem_init(&sem_enter_barrier, 1, 0) < 0) {
         error_code = ERROR_CREATING_SEMAPHORE;
         goto finish;
     }
@@ -237,8 +238,8 @@ int threads_barrier() {
     // destroy the semaphores
     sem_destroy(&sem_limit);
     sem_destroy(&sem_leave);
-    sem_destroy(&sem_barrier);
-    sem_destroy(&sem_enter);
+    sem_destroy(&sem_exit_barrier);
+    sem_destroy(&sem_enter_barrier);
     return error_code;
 }
 
