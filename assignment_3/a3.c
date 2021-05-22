@@ -392,36 +392,34 @@ int handle_read_from_logical_offset() {
         goto finish;
     }
     /* compute the address in the sf file using the given logical address */
-    unsigned int no_of_pages = logical_offset / PAGE_SIZE;
-    unsigned int byte_offset = 0;
     unsigned int sect_header_start = sizeof(sf_header_t);
-    int page_count = 0;
-    int sect_start_page_index = 0;
+    int curr_offset = 0;
+    int sect_start = 0;
     int i=0;
     do{
+        /* read the next section header */
         memcpy(&sect_header, mmf_data + sect_header_start, sizeof(sect_header_t));
         if (!is_valid_section_header(sect_header)) {
             status = ERR_INVALID_SF_FILE_FORMAT;
             goto finish;
         }
-        printf("size = %d offset = %d\n",sect_header.sect_size,sect_header.sect_offset);
-        sect_start_page_index = page_count;
-        page_count += sect_header.sect_size / PAGE_SIZE;
+        sect_start = curr_offset;
+        curr_offset += (sect_header.sect_size / PAGE_SIZE) * PAGE_SIZE;
         if (sect_header.sect_size % PAGE_SIZE > 0)
-            page_count++;
+            curr_offset+=PAGE_SIZE;
         sect_header_start += sizeof(sect_header_t);
         i++;
-    }while(i < mmf_header.no_of_sections && page_count < no_of_pages);
+    }while(i < mmf_header.no_of_sections && curr_offset < logical_offset);
 
-    if (page_count < no_of_pages) {
+    if (curr_offset < logical_offset) {
         status = ERR_READING_FROM_LOGICAL_OFFSET;
         goto finish;
     }
-    byte_offset = logical_offset - sect_start_page_index * PAGE_SIZE;
-    //printf("start address = %d end address %d\n",sect_header.sect_offset,sect_header.sect_offset+sect_header.sect_size);
+    /* calculate the offset from the start of the section */
+    unsigned int byte_offset = logical_offset - sect_start;
     /* validate byte_offset and nr of read bytes */
     bool valid_data = true;
-    if (byte_offset > sect_header.sect_offset + sect_header.sect_size || no_of_bytes > sect_header.sect_size)
+    if (byte_offset > sect_header.sect_size || byte_offset + no_of_bytes > sect_header.sect_size)
         valid_data = false;
 
     status = write_string_field(fd_write, MSG_READ_FROM_LOGICAL_SPACE_OFFSET);
@@ -431,7 +429,6 @@ int handle_read_from_logical_offset() {
         memcpy(sh_mem_data, mmf_data + sect_header.sect_offset + byte_offset, no_of_bytes);
         status = write_string_field(fd_write, MSG_SUCCESS);
     } else {
-        printf("not valid\n");
         status = write_string_field(fd_write, MSG_ERROR);
     }
     finish:
