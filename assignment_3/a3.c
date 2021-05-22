@@ -17,6 +17,9 @@ ERR_ALLOCATING_MEMORY
 #define MSG_CONNECT "CONNECT"
 #define MSG_ERROR "ERROR"
 #define MSG_SUCCESS "SUCCESS"
+#define MSG_PING "PING"
+#define MSG_PONG "PONG"
+#define MSG_ID_NUMBER 41938
 
 #define MAX_REQUEST_LENGTH 100
 
@@ -69,6 +72,9 @@ int open_named_pipe(int * fd, char * name, int flag);
 int write_string_field(int fd, char * param);
 int write_number_field(int fd, unsigned int param);
 int read_string_field(int fd, char * param);
+int read_number_field(int fd, int * param);
+
+int handle_request(int fd_read, int fd_write);
 bool is_valid_sf_format(sf_header_t sf_header);
 
 int main() {
@@ -86,8 +92,11 @@ int main() {
 
     print_success_message
 
+    // affirm connected to pipe
     status = write_string_field(fd_write,MSG_CONNECT);
     print_error_message(status,"cannot write to response pipe")
+
+    handle_request(fd_read,fd_write);
 
     /*
      * read request from REQ_PIPE
@@ -165,11 +174,29 @@ int read_string_field(int fd, char * param){
     if(read(fd, param, size) < size)
         return ERR_READING_FROM_PIPE;
     param[size] = '\0';
-    printf("%d %s\n",size,param);
     return SUCCESS;
 }
 int write_number_field(int fd, unsigned int param){
     if(write(fd, &param, sizeof(unsigned int)) < 0)
         return ERR_WRITING_TO_PIPE;
     return SUCCESS;
+}
+
+int handle_request(int fd_read, int fd_write){
+    int status;
+    // read request
+    char request[MAX_REQUEST_LENGTH + 1];
+    status = read_string_field(fd_read, request);
+    print_error_message(status,"cannot read from request pipe")
+    // send response
+    if(strncmp(request, MSG_PING, strlen(MSG_PING)) == 0) {
+        status = write_string_field(fd_write,MSG_PING);
+        print_error_message(status,"cannot write to response pipe")
+        status = write_string_field(fd_write,MSG_PONG);
+        print_error_message(status,"cannot write to response pipe")
+        status = write_number_field(fd_write, MSG_ID_NUMBER);
+        print_error_message(status,"cannot write to response pipe")
+    }
+    clean_up:
+    return status;
 }
