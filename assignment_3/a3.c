@@ -337,11 +337,6 @@ int handle_read_from_file_section(){
 
     memcpy(&mmf_header,mmf_data,sizeof(sf_header_t));
 
-    // TODO: delete print  message
-    char magic[5];
-    memcpy(magic,mmf_header.magic,4);
-    magic[4]='\0';
-    printf("HEADER: magic = %s \nsize = %d \nversion = %d \nno_sections = %d\n",magic,mmf_header.header_size,mmf_header.version,mmf_header.no_of_sections);
     /* check that the mapped file has a valid sf format */
     if(!is_valid_sf_format(mmf_header)) {
         status = ERR_READING_FROM_FILE_SECTION;
@@ -361,11 +356,6 @@ int handle_read_from_file_section(){
     unsigned int sect_header_start = sizeof(sf_header_t) + (section_nr-1)*sizeof(sect_header_t);
     memcpy(&sect_header, mmf_data + sect_header_start, sizeof(sect_header_t));
 
-    // TODO: delete print  message
-    char name[20];
-    memcpy(name,sect_header.sect_name,19);
-    name[19]='\0';
-    printf("SECT: name = %s type = %d offset = %d size = %d\n",name,sect_header.sect_type,sect_header.sect_offset,sect_header.sect_size);
     if(!is_valid_section_header(sect_header)) {
         status = ERR_READING_FROM_FILE_SECTION;
         goto clean_up;
@@ -378,6 +368,9 @@ int handle_read_from_file_section(){
         valid_data = false;
 
     evaluate:
+    status = write_string_field(fd_write, MSG_READ_FROM_FILE_SECTION);
+    if(status != SUCCESS) goto clean_up;
+
     if(valid_data) {
         unsigned int total_offset = sect_header.sect_offset+offset;
         memcpy(sh_mem_data,mmf_data+total_offset,no_of_bytes);
