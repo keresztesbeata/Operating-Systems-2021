@@ -15,7 +15,8 @@ ERR_READING_FROM_PIPE,
 ERR_CREATING_SHARED_MEMORY,
 ERR_CREATING_MAPPING,
 ERR_WRITING_TO_SHARED_MEMORY,
-ERR_OPENING_FILE
+ERR_OPENING_FILE,
+ERR_READING_FROM_FILE_SECTION
 }return_status_t;
 
 #define MSG_ERROR "ERROR"
@@ -50,17 +51,12 @@ typedef struct s_sect_header{
 
 #pragma pack(push,1)
 typedef struct s_sf_header{
-    char magic[4];  //TODO not a null terminated string => careful with strcmp
+    char magic[4];
     unsigned short header_size;
     short version;
-    char no_of_sections;  //TODO convert it to type unsigned int after read
+    char no_of_sections;
 }sf_header_t;
 #pragma pack(pop)
-
-typedef struct sf_format{
-    sect_header_t sect_header;
-    sf_header_t * sf_header;
-}sf_format_t;
 
 /*
  * REQUEST:
@@ -84,6 +80,7 @@ int handle_create_shared_memory_request();
 int handle_write_to_shared_memory_request();
 int handle_map_file_request();
 int handle_read_from_file_offset();
+int handle_read_from_file_section();
 
 int write_string_field(int fd, char * param);
 int write_number_field(int fd, unsigned int param);
@@ -94,20 +91,16 @@ int create_named_pipe(char * name);
 int open_named_pipe(int * fd, char * name, int flag);
 int create_and_map_shared_memory(char * name, int size);
 /** map the file for reading */
-int memory_map_file(char * file_name);
-
-char * select_error_message(return_status_t status);
+int map_sf_file(char * file_name);
+int map_sf_file_section(char * file_name, int size, int offset, char * data);
 
 bool is_valid_sf_format(sf_header_t sf_header);
+bool is_valid_section_header(sect_header_t sect_header);
+char * select_error_message(return_status_t status);
 
-/** File descriptor of the memory file to be mapped. */
-int fd_mmf = -1;
 /** Size of the memory mapped file */
 int mmf_size = 0;
-/** Holds the mapped address of the memory data.*/
 char * mmf_data = NULL;
-/** File descriptor of the shared memory file. */
-int fd_shm = -1;
 /** Holds the mapped address of the shared memory.*/
 char * sh_mem_data = NULL;
 /** File descriptor corresponding to the request pipe. */
@@ -146,14 +139,12 @@ int main() {
         close(fd_write);
     unlink(REQ_PIPE_NAME);
     unlink(RESP_PIPE_NAME);
-    if(fd_shm > 0) {
+    if(sh_mem_data != NULL) {
         munmap(sh_mem_data, SH_MEM_SIZE);
-        close(fd_shm);
         shm_unlink(SH_MEM_NAME);
     }
-    if(fd_mmf > 0) {
-        munmap(mmf_data, mmf_size);
-        close(fd_mmf);
+    if(mmf_data != NULL) {
+        munmap(mmf_data, sizeof(sf_header_t));
     }
     return status;
 }
@@ -176,7 +167,7 @@ int read_and_handle_request(){
     }else if(strncmp(request_name, MSG_READ_FROM_FILE_OFFSET, strlen(MSG_READ_FROM_FILE_OFFSET)) == 0) {
         handle_read_from_file_offset();
     }else if(strncmp(request_name, MSG_READ_FROM_FILE_SECTION, strlen(MSG_READ_FROM_FILE_SECTION)) == 0) {
-        exit_loop = true;
+        handle_read_from_file_section();
     }else if(strncmp(request_name, MSG_READ_FROM_LOGICAL_SPACE_OFFSET, strlen(MSG_READ_FROM_LOGICAL_SPACE_OFFSET)) == 0) {
         exit_loop = true;
     }else if(strncmp(request_name, MSG_EXIT, strlen(MSG_EXIT)) == 0)
@@ -252,16 +243,7 @@ int handle_write_to_shared_memory_request(){
         status = ERR_WRITING_TO_SHARED_MEMORY;
 
     if(status == SUCCESS) {
-        off_t position = lseek(fd_shm,offset,SEEK_SET);
-        if(position != offset) {
-            status = ERR_WRITING_TO_SHARED_MEMORY;
-            goto finish;
-        }
-        ssize_t nr_bytes = write(fd_shm,&value,sizeof(unsigned int));
-        if(nr_bytes == -1) {
-            status = ERR_WRITING_TO_SHARED_MEMORY;
-            goto finish;
-        }
+        memcpy(sh_mem_data + offset,&value,sizeof(unsigned int));
         status = write_string_field(fd_write, MSG_SUCCESS);
     }else {
         status = write_string_field(fd_write, MSG_ERROR);
@@ -283,7 +265,7 @@ int handle_map_file_request(){
     status = write_string_field(fd_write, MSG_MAP_FILE);
     if(status != SUCCESS) goto finish;
 
-    status = memory_map_file(file_name);
+    status = map_sf_file(file_name);
     if(status == SUCCESS) {
         status = write_string_field(fd_write, MSG_SUCCESS);
     }else {
@@ -334,37 +316,143 @@ int handle_read_from_file_offset(){
     return status;
 }
 
-int memory_map_file(char * file_name){
+int handle_read_from_file_section(){
     int status = SUCCESS;
-    fd_mmf = open(file_name, O_RDONLY);
+    unsigned int section_nr;
+    unsigned int offset;
+    unsigned int no_of_bytes;
+
+    sect_header_t sect_header;
+    sf_header_t mmf_header;
+    status = read_number_field(fd_read, &section_nr);
+    if(status != SUCCESS) goto clean_up;
+
+    status = read_number_field(fd_read, &offset);
+    if(status != SUCCESS) goto clean_up;
+
+    status = read_number_field(fd_read, &no_of_bytes);
+    if(status != SUCCESS) goto clean_up;
+
+    printf("section_nr = %d \noffset = %d \nno_bytes = %d\n",section_nr,offset,no_of_bytes);
+
+    memcpy(&mmf_header,mmf_data,sizeof(sf_header_t));
+
+    // TODO: delete print  message
+    char magic[5];
+    memcpy(magic,mmf_header.magic,4);
+    magic[4]='\0';
+    printf("HEADER: magic = %s \nsize = %d \nversion = %d \nno_sections = %d\n",magic,mmf_header.header_size,mmf_header.version,mmf_header.no_of_sections);
+    /* check that the mapped file has a valid sf format */
+    if(!is_valid_sf_format(mmf_header)) {
+        status = ERR_READING_FROM_FILE_SECTION;
+        goto clean_up;
+    }
+    bool valid_data = true;
+    /*  validate that there exists a mapping for a file and a shared memory region. */
+    if(sh_mem_data == NULL || mmf_data == NULL)
+        valid_data = false;
+    /* validate that the section number is less than or equal than the max nr of sections */
+    if(section_nr < 1 || section_nr > mmf_header.no_of_sections)
+        valid_data = false;
+
+    if(!valid_data)
+        goto evaluate;
+
+    unsigned int sect_header_start = sizeof(sf_header_t) + (section_nr-1)*sizeof(sect_header_t);
+    memcpy(&sect_header, mmf_data + sect_header_start, sizeof(sect_header_t));
+
+    // TODO: delete print  message
+    char name[20];
+    memcpy(name,sect_header.sect_name,19);
+    name[19]='\0';
+    printf("SECT: name = %s type = %d offset = %d size = %d\n",name,sect_header.sect_type,sect_header.sect_offset,sect_header.sect_size);
+    if(!is_valid_section_header(sect_header)) {
+        status = ERR_READING_FROM_FILE_SECTION;
+        goto clean_up;
+    }
+    /* validate that the offset is within the size limits of the section */
+    if(offset < 0 || offset > sect_header.sect_size)
+        valid_data = false;
+    /* validate if the bytes of the written no_of_bytes also correspond to offsets inside shared memory */
+    if(no_of_bytes < 0 || no_of_bytes > SH_MEM_SIZE)
+        valid_data = false;
+
+    evaluate:
+    if(valid_data) {
+        unsigned int total_offset = sect_header.sect_offset+offset;
+        memcpy(sh_mem_data,mmf_data+total_offset,no_of_bytes);
+        status = write_string_field(fd_write, MSG_SUCCESS);
+    }else {
+        status = write_string_field(fd_write, MSG_ERROR);
+    }
+
+    clean_up:
+    if(status != SUCCESS)
+        printf("%s\n%s",MSG_ERROR, select_error_message(status));
+    return status;
+}
+
+int map_sf_file_section(char * file_name, int size, int offset, char * data){
+    int status = SUCCESS;
+    int fd_mmf = open(file_name, O_RDONLY);
     if(fd_mmf == -1) {
         status = ERR_OPENING_FILE;
-        goto finish;
+        goto clean_up;
+    }
+    mmf_data = (char *)mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd_mmf, offset);
+    if(mmf_data == MAP_FAILED) {
+        status = ERR_CREATING_MAPPING;
+        goto clean_up;
+    }
+    clean_up:
+    if(fd_mmf > 0)
+        close(fd_mmf);
+    return status;
+}
+
+int map_sf_file(char * file_name) {
+    int status = SUCCESS;
+    int fd_mmf = open(file_name, O_RDONLY);
+    if(fd_mmf == -1) {
+        status = ERR_OPENING_FILE;
+        goto clean_up;
     }
     mmf_size = lseek(fd_mmf, 0, SEEK_END);
     lseek(fd_mmf, 0, SEEK_SET);
-    mmf_data = (char*)mmap(NULL, mmf_size, PROT_READ, MAP_PRIVATE, fd_mmf, 0);
+    mmf_data = (char *)mmap(NULL, mmf_size, PROT_READ, MAP_PRIVATE, fd_mmf, 0);
     if(mmf_data == MAP_FAILED) {
         status = ERR_CREATING_MAPPING;
-        goto finish;
+        goto clean_up;
     }
-    finish:
+    clean_up:
+    if(fd_mmf > 0)
+        close(fd_mmf);
     return status;
 }
 
 int create_and_map_shared_memory(char * name, int size){
+    int status = SUCCESS;
     /* create shared memory region */
-    fd_shm = shm_open(name, O_CREAT | O_RDWR, 0664);
-    if(fd_shm == -1)
-        return ERR_CREATING_SHARED_MEMORY;
+    int fd_shm = shm_open(name, O_CREAT | O_RDWR, 0664);
+    if(fd_shm == -1) {
+        status = ERR_CREATING_SHARED_MEMORY;
+        goto clean_up;
+    }
     /* set size of the file */
-    if(ftruncate(fd_shm,size) == -1)
-        return ERR_CREATING_SHARED_MEMORY;
+    if(ftruncate(fd_shm,size) == -1) {
+        status = ERR_CREATING_SHARED_MEMORY;
+        goto clean_up;
+    }
     /* map the shared memory region */
     sh_mem_data = (char*)mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd_shm, 0);
-    if(sh_mem_data == MAP_FAILED)
-        return ERR_CREATING_MAPPING;
-    return SUCCESS;
+    if(sh_mem_data == MAP_FAILED) {
+        status = ERR_CREATING_MAPPING;
+        goto clean_up;
+    }
+    clean_up:
+    if(fd_shm > 0)
+        close(fd_shm);
+    return status;
 }
 
 int create_named_pipe(char * name) {
@@ -426,30 +514,34 @@ char * select_error_message(return_status_t status){
         case ERR_CREATING_MAPPING: return "cannot map shared memory";
         case ERR_WRITING_TO_SHARED_MEMORY: return "cannot write to shared memory";
         case ERR_OPENING_FILE: return "cannot open the file";
+        case ERR_READING_FROM_FILE_SECTION: return "cannot read from file section";
         default: return "";
     }
 }
 
-bool is_valid_sf_format(sf_header_t sf_header){
+bool is_valid_sf_format(sf_header_t sf_header) {
     /* check magic number = MAGIC_NR */
     char magic_ext[5];
-    memcpy(magic_ext,sf_header.magic,strlen(sf_header.magic));
+    memcpy(magic_ext,sf_header.magic,strlen(MAGIC_NR));
     magic_ext[4] = '\0';
     if(strcmp(magic_ext,MAGIC_NR) != 0)
         return false;
     /* check version number in range:  14 - 128 */
     if(sf_header.version < 47 || sf_header.version > 128)
         return false;
-    /* check no_of_sections in range : 3 - 19 */
-    if((int)sf_header.no_of_sections < 5 || (int)sf_header.no_of_sections > 19)
+    /* check no_of_sections in range : 5 - 19 */
+    if(sf_header.no_of_sections < 5 || sf_header.no_of_sections > 19)
         return false;
-    /* check valid sect type in {19, 10 , 58, 57, 11, 53} */
-    bool valid = false;
-    const unsigned int VALID_SECT_TYPES[] = {19, 10 , 58, 57, 11, 53};
-    int n = sizeof(VALID_SECT_TYPES) / sizeof(int);
-    for(int i=0;i<n;i++)
-        if(sf_header.no_of_sections == VALID_SECT_TYPES[i])
-            valid = true;
-    return valid;
+    return true;
 }
 
+bool is_valid_section_header(sect_header_t sect_header) {
+    /* check valid sect types are in {19, 10 , 58, 57, 11, 53} */
+    unsigned int VALID_SECT_TYPES[6] = {19, 10, 58, 57, 11, 53};
+    for (int i = 0; i < 6; i++) {
+        if (sect_header.sect_type == VALID_SECT_TYPES[i]) {
+            return true;
+        }
+    }
+    return false;
+}
