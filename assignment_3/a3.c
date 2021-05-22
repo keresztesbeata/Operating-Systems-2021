@@ -14,12 +14,12 @@ ERR_WRITING_TO_PIPE,
 ERR_READING_FROM_PIPE,
 ERR_CREATING_SHARED_MEMORY,
 ERR_CREATING_MAPPING,
-ERR_WRITING_TO_SHARED_MEMORY
+ERR_WRITING_TO_SHARED_MEMORY,
+ERR_OPENING_FILE
 }return_status_t;
 
 #define MSG_ERROR "ERROR"
 #define MSG_SUCCESS "SUCCESS"
-
 #define MSG_CONNECT "CONNECT"
 #define MSG_PING "PING"
 #define MSG_CREATE_SH_MEM "CREATE_SHM"
@@ -31,10 +31,13 @@ ERR_WRITING_TO_SHARED_MEMORY
 #define MSG_EXIT "EXIT"
 
 #define MAX_REQUEST_LENGTH 100
+#define MAX_FILE_NAME_LENGTH 100
 
 #define MAGIC_NR "1A4P"
 #define SH_MEM_NAME "/o9gGHlSV"
 #define SH_MEM_SIZE 4989424
+#define RESP_PIPE_NAME "RESP_PIPE_41938"
+#define REQ_PIPE_NAME "REQ_PIPE_41938"
 
 #pragma pack(push,1)
 typedef struct s_sect_header{
@@ -59,12 +62,6 @@ typedef struct sf_format{
     sf_header_t * sf_header;
 }sf_format_t;
 
-
-#define RESP_PIPE_NAME "RESP_PIPE_41938"
-#define REQ_PIPE_NAME "REQ_PIPE_41938"
-
-
-
 /*
  * REQUEST:
  * <req_name> <params> ...
@@ -77,31 +74,44 @@ typedef struct sf_format{
  * RESPONSE:
  * <req_name> <response_status> <params> ...
  */
-
-char * select_error_message(return_status_t status);
-
-int create_named_pipe(char * name);
-int open_named_pipe(int * fd, char * name, int flag);
+/* read request from REQ_PIPE
+ * handle request
+ * write back to RESP_PIPE the result
+ */
+int read_and_handle_request();
+int handle_ping_request();
+int handle_create_shared_memory_request();
+int handle_write_to_shared_memory_request();
+int handle_map_file_request();
 
 int write_string_field(int fd, char * param);
 int write_number_field(int fd, unsigned int param);
 int read_string_field(int fd, char * param);
 int read_number_field(int fd, unsigned int * param);
 
-int read_and_handle_request();
-int handle_ping_request();
-int handle_create_shared_memory_request();
-int handle_write_to_shared_memory_request();
-
+int create_named_pipe(char * name);
+int open_named_pipe(int * fd, char * name, int flag);
 int create_shared_memory(int * fd, char * name, int size);
 int map_shared_memory(int fd, int size, char * mapped_data);
+/** map the file for reading */
+int memory_map_file(char * file_name, char * mapped_data);
+
+char * select_error_message(return_status_t status);
 
 bool is_valid_sf_format(sf_header_t sf_header);
 
+/** File descriptor of the shared memory file. */
 int fd_shm = -1;
+/** Holds the mapped address of the shared memory.*/
 char * shared_mem_data = NULL;
-int fd_read = -1, fd_write = -1;
-bool exit_loop;
+/** Holds the mapped address of the memory data.*/
+char * mapped_mem_data = NULL;
+/** File descriptor corresponding to the request pipe. */
+int fd_read = -1;
+/** File descriptor corresponding to the request pipe. */
+int fd_write = -1;
+/** The condition to exit the loop. Until it is false, the program continues to receive requests and respond to them through the dedicated pipes. */
+bool exit_loop = false;
 
 int main() {
     int status = SUCCESS;
@@ -120,14 +130,8 @@ int main() {
     status = write_string_field(fd_write, MSG_CONNECT);
     if(status != SUCCESS) goto clean_up;
 
-    /*
-     * read request from REQ_PIPE
-     * handle request
-     * write back to RESP_PIPE the result
-     */
     while(!exit_loop)
         read_and_handle_request(fd_read, fd_write);
-
 
     clean_up:
     if(status != SUCCESS)
@@ -145,13 +149,14 @@ int main() {
     }
     return status;
 }
+
 int read_and_handle_request(){
     int status = SUCCESS;
     /* read request */
     char request_name[MAX_REQUEST_LENGTH + 1];
     status = read_string_field(fd_read, request_name);
-    if(status != SUCCESS) goto clean_up;
-    /* decode adn handle request */
+    if(status != SUCCESS) goto finish;
+    /* decode and handle request */
     if(strncmp(request_name, MSG_PING, strlen(MSG_PING)) == 0) {
         status = handle_ping_request(fd_write);
     }else if(strncmp(request_name, MSG_CREATE_SH_MEM, strlen(MSG_CREATE_SH_MEM)) == 0) {
@@ -159,7 +164,7 @@ int read_and_handle_request(){
     }else if(strncmp(request_name, MSG_WRITE_TO_SH_MEM, strlen(MSG_WRITE_TO_SH_MEM)) == 0) {
         status = handle_write_to_shared_memory_request(fd_read,fd_write);
     }else if(strncmp(request_name, MSG_MAP_FILE, strlen(MSG_MAP_FILE)) == 0) {
-        exit_loop = true;
+        handle_map_file_request();
     }else if(strncmp(request_name, MSG_READ_FROM_FILE_OFFSET, strlen(MSG_READ_FROM_FILE_OFFSET)) == 0) {
         exit_loop = true;
     }else if(strncmp(request_name, MSG_READ_FROM_FILE_SECTION, strlen(MSG_READ_FROM_FILE_SECTION)) == 0) {
@@ -168,51 +173,53 @@ int read_and_handle_request(){
         exit_loop = true;
     }else if(strncmp(request_name, MSG_EXIT, strlen(MSG_EXIT)) == 0)
         exit_loop = true;
-    clean_up:
+    finish:
     return status;
 }
+
 int handle_ping_request(){
     int status = SUCCESS;
     char MSG_PONG[] = "PONG";
     int ID_PING = 41938;
 
     status = write_string_field(fd_write, MSG_PING);
-    if(status != SUCCESS) goto clean_up;
+    if(status != SUCCESS) goto finish;
 
     status = write_string_field(fd_write, MSG_PONG);
-    if(status != SUCCESS) goto clean_up;
+    if(status != SUCCESS) goto finish;
 
     status = write_number_field(fd_write, ID_PING);
-    if(status != SUCCESS) goto clean_up;
+    if(status != SUCCESS) goto finish;
 
-    clean_up:
+    finish:
     if(status != SUCCESS)
         printf("%s\n%s",MSG_ERROR, select_error_message(status));
     return status;
 }
+
 int handle_create_shared_memory_request(){
     int status = SUCCESS;
 
     unsigned int shared_mem_size;
     status = read_number_field(fd_read, &shared_mem_size);
-    if(status != SUCCESS) goto clean_up;
+    if(status != SUCCESS) goto finish;
     if(shared_mem_size != SH_MEM_SIZE)
         return ERR_CREATING_SHARED_MEMORY;
 
     status = write_string_field(fd_write, MSG_CREATE_SH_MEM);
-    if(status != SUCCESS) goto clean_up;
+    if(status != SUCCESS) goto finish;
 
     status = create_shared_memory(&fd_shm, SH_MEM_NAME, SH_MEM_SIZE);
     if(status == SUCCESS) {
         status = write_string_field(fd_write, MSG_SUCCESS);
-        if(status != SUCCESS) goto clean_up;
+        if(status != SUCCESS) goto finish;
         /* if the shared memory was created successfully, map it to the program's VAS */
         status = map_shared_memory(fd_shm, SH_MEM_SIZE, shared_mem_data);
     }else {
         status = write_string_field(fd_write, MSG_ERROR);
     }
 
-    clean_up:
+    finish:
     if(status != SUCCESS)
         printf("%s\n%s",MSG_ERROR, select_error_message(status));
     return status;
@@ -224,13 +231,13 @@ int handle_write_to_shared_memory_request(){
     unsigned int value;
 
     status = read_number_field(fd_read, &offset);
-    if(status != SUCCESS) goto clean_up;
+    if(status != SUCCESS) goto finish;
 
     status = read_number_field(fd_read, &value);
-    if(status != SUCCESS) goto clean_up;
+    if(status != SUCCESS) goto finish;
 
     status = write_string_field(fd_write, MSG_WRITE_TO_SH_MEM);
-    if(status != SUCCESS) goto clean_up;
+    if(status != SUCCESS) goto finish;
 
     /* validate the offset */
     if(offset < 0 || offset > SH_MEM_SIZE)
@@ -241,20 +248,65 @@ int handle_write_to_shared_memory_request(){
         status = ERR_WRITING_TO_SHARED_MEMORY;
 
     if(status == SUCCESS) {
-        status = lseek(fd_shm,offset,SEEK_SET);
-        if(status != offset) goto clean_up;
-
-        status = write(fd_shm,&value,sizeof(unsigned int));
-        if(status != sizeof(unsigned int)) goto clean_up;
-
+        off_t position = lseek(fd_shm,offset,SEEK_SET);
+        if(position != offset) {
+            status = ERR_WRITING_TO_SHARED_MEMORY;
+            goto finish;
+        }
+        ssize_t nr_bytes = write(fd_shm,&value,sizeof(unsigned int));
+        if(nr_bytes == -1) {
+            status = ERR_WRITING_TO_SHARED_MEMORY;
+            goto finish;
+        }
         status = write_string_field(fd_write, MSG_SUCCESS);
     }else {
         status = write_string_field(fd_write, MSG_ERROR);
     }
 
-    clean_up:
+    finish:
     if(status != SUCCESS)
         printf("%s\n%s",MSG_ERROR, select_error_message(status));
+    return status;
+}
+
+int handle_map_file_request(){
+    int status = SUCCESS;
+    char file_name[MAX_FILE_NAME_LENGTH];
+
+    status = read_string_field(fd_read, file_name);
+    if(status != SUCCESS) goto finish;
+
+    status = write_string_field(fd_write, MSG_MAP_FILE);
+    if(status != SUCCESS) goto finish;
+
+    status = memory_map_file(file_name,mapped_mem_data);
+    if(status == SUCCESS) {
+        status = write_string_field(fd_write, MSG_SUCCESS);
+    }else {
+        status = write_string_field(fd_write, MSG_ERROR);
+    }
+
+    finish:
+    if(status != SUCCESS)
+        printf("%s\n%s",MSG_ERROR, select_error_message(status));
+    return status;
+}
+
+int memory_map_file(char * file_name, char * mapped_data){
+    int status = SUCCESS;
+    int fd = open(file_name, O_RDONLY);
+    if(fd == -1) {
+        status = ERR_OPENING_FILE;
+        goto finish;
+    }
+    unsigned int size = lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, SEEK_SET);
+    mapped_data = (char*)mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if(mapped_data == MAP_FAILED) {
+        status = ERR_CREATING_MAPPING;
+        goto finish;
+    }
+    finish:
     return status;
 }
 
@@ -268,6 +320,7 @@ int create_shared_memory(int * fd, char * name, int size){
         return ERR_CREATING_SHARED_MEMORY;
     return SUCCESS;
 }
+
 int map_shared_memory(int fd, int size, char * mapped_data) {
     /* map the shared memory region */
     mapped_data = (char*)mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
@@ -276,13 +329,13 @@ int map_shared_memory(int fd, int size, char * mapped_data) {
     return SUCCESS;
 }
 
-
 int create_named_pipe(char * name) {
     if (mkfifo(name, 0600) == -1) {
         return ERR_CREATING_PIPE;
     }
     return SUCCESS;
 }
+
 int open_named_pipe(int * fd, char * name, int flag){
     *fd = open(name, flag);
     if (*fd == -1) {
@@ -290,6 +343,7 @@ int open_named_pipe(int * fd, char * name, int flag){
     }
     return SUCCESS;
 }
+
 int write_string_field(int fd, char * param){
     size_t size = strlen(param);
     if(write(fd, &size, 1) == -1)
@@ -298,6 +352,7 @@ int write_string_field(int fd, char * param){
         return ERR_WRITING_TO_PIPE;
     return SUCCESS;
 }
+
 int read_string_field(int fd, char * param){
     char c;
     if(read(fd, &c, 1) < 1)
@@ -308,12 +363,14 @@ int read_string_field(int fd, char * param){
     param[size] = '\0';
     return SUCCESS;
 }
+
 int write_number_field(int fd, unsigned int param){
     size_t size = sizeof(unsigned int);
     if(write(fd, &param, size) < size)
         return ERR_WRITING_TO_PIPE;
     return SUCCESS;
 }
+
 int read_number_field(int fd, unsigned int * param){
     size_t size = sizeof(unsigned int);
     if(read(fd, param, size) < size)
@@ -330,10 +387,10 @@ char * select_error_message(return_status_t status){
         case ERR_CREATING_SHARED_MEMORY: return "cannot create shared memory";
         case ERR_CREATING_MAPPING: return "cannot map shared memory";
         case ERR_WRITING_TO_SHARED_MEMORY: return "cannot write to shared memory";
+        case ERR_OPENING_FILE: return "cannot open the file";
         default: return "";
     }
 }
-
 
 bool is_valid_sf_format(sf_header_t sf_header){
     /* check magic number = MAGIC_NR */
