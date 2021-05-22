@@ -87,6 +87,7 @@ char * select_error_message(return_status_t status);
 
 /** Size of the memory mapped file */
 int mmf_size = 0;
+/** Content of the memory mapped file */
 char * mmf_data = NULL;
 /** Holds the mapped address of the shared memory.*/
 char * sh_mem_data = NULL;
@@ -110,7 +111,7 @@ int main() {
 
     printf("%s\n",MSG_SUCCESS);
 
-    /* affirm connection to the pipe */
+    /* confirm establishing connection to the pipes */
     status = write_string_field(fd_write, MSG_CONNECT);
     if(status != SUCCESS) goto clean_up;
 
