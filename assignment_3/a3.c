@@ -16,7 +16,9 @@ ERR_CREATING_SHARED_MEMORY,
 ERR_CREATING_MAPPING,
 ERR_WRITING_TO_SHARED_MEMORY,
 ERR_OPENING_FILE,
-ERR_READING_FROM_FILE_SECTION
+ERR_READING_FROM_FILE_SECTION,
+ERR_READING_FROM_LOGICAL_OFFSET,
+ERR_INVALID_SF_FILE_FORMAT
 }return_status_t;
 
 #define MSG_ERROR "ERROR"
@@ -34,11 +36,12 @@ ERR_READING_FROM_FILE_SECTION
 #define MAX_REQUEST_LENGTH 100
 #define MAX_FILE_NAME_LENGTH 100
 
+#define RESP_PIPE_NAME "RESP_PIPE_41938"
+#define REQ_PIPE_NAME "REQ_PIPE_41938"
 #define MAGIC_NR "1A4P"
 #define SH_MEM_NAME "/o9gGHlSV"
 #define SH_MEM_SIZE 4989424
-#define RESP_PIPE_NAME "RESP_PIPE_41938"
-#define REQ_PIPE_NAME "REQ_PIPE_41938"
+#define PAGE_SIZE 3072
 
 #pragma pack(push,1)
 typedef struct s_sect_header{
@@ -58,22 +61,6 @@ typedef struct s_sf_header{
 }sf_header_t;
 #pragma pack(pop)
 
-/*
- * REQUEST:
- * <req_name> <params> ...
- * param types (hexadecimal values)
- * string_field: size(1B) + content(size B)
- * number_field: unsigned int
- */
-
-/*
- * RESPONSE:
- * <req_name> <response_status> <params> ...
- */
-/* read request from REQ_PIPE
- * handle request
- * write back to RESP_PIPE the result
- */
 int read_and_handle_request();
 int handle_ping_request();
 int handle_create_shared_memory_request();
@@ -81,6 +68,7 @@ int handle_write_to_shared_memory_request();
 int handle_map_file_request();
 int handle_read_from_file_offset();
 int handle_read_from_file_section();
+int handle_read_from_logical_offset();
 
 int write_string_field(int fd, char * param);
 int write_number_field(int fd, unsigned int param);
@@ -92,7 +80,6 @@ int open_named_pipe(int * fd, char * name, int flag);
 int create_and_map_shared_memory(char * name, int size);
 /** map the file for reading */
 int map_sf_file(char * file_name);
-int map_sf_file_section(char * file_name, int size, int offset, char * data);
 
 bool is_valid_sf_format(sf_header_t sf_header);
 bool is_valid_section_header(sect_header_t sect_header);
@@ -169,7 +156,7 @@ int read_and_handle_request(){
     }else if(strncmp(request_name, MSG_READ_FROM_FILE_SECTION, strlen(MSG_READ_FROM_FILE_SECTION)) == 0) {
         handle_read_from_file_section();
     }else if(strncmp(request_name, MSG_READ_FROM_LOGICAL_SPACE_OFFSET, strlen(MSG_READ_FROM_LOGICAL_SPACE_OFFSET)) == 0) {
-        exit_loop = true;
+        handle_read_from_logical_offset();
     }else if(strncmp(request_name, MSG_EXIT, strlen(MSG_EXIT)) == 0)
         exit_loop = true;
     finish:
@@ -321,26 +308,24 @@ int handle_read_from_file_section(){
     unsigned int section_nr;
     unsigned int offset;
     unsigned int no_of_bytes;
-
     sect_header_t sect_header;
     sf_header_t mmf_header;
+
     status = read_number_field(fd_read, &section_nr);
-    if(status != SUCCESS) goto clean_up;
+    if(status != SUCCESS) goto finish;
 
     status = read_number_field(fd_read, &offset);
-    if(status != SUCCESS) goto clean_up;
+    if(status != SUCCESS) goto finish;
 
     status = read_number_field(fd_read, &no_of_bytes);
-    if(status != SUCCESS) goto clean_up;
-
-    printf("section_nr = %d \noffset = %d \nno_bytes = %d\n",section_nr,offset,no_of_bytes);
+    if(status != SUCCESS) goto finish;
 
     memcpy(&mmf_header,mmf_data,sizeof(sf_header_t));
 
     /* check that the mapped file has a valid sf format */
     if(!is_valid_sf_format(mmf_header)) {
-        status = ERR_READING_FROM_FILE_SECTION;
-        goto clean_up;
+        status = ERR_INVALID_SF_FILE_FORMAT;
+        goto finish;
     }
     bool valid_data = true;
     /*  validate that there exists a mapping for a file and a shared memory region. */
@@ -357,8 +342,8 @@ int handle_read_from_file_section(){
     memcpy(&sect_header, mmf_data + sect_header_start, sizeof(sect_header_t));
 
     if(!is_valid_section_header(sect_header)) {
-        status = ERR_READING_FROM_FILE_SECTION;
-        goto clean_up;
+        status = ERR_INVALID_SF_FILE_FORMAT;
+        goto finish;
     }
     /* validate that the offset is within the size limits of the section */
     if(offset < 0 || offset > sect_header.sect_size)
@@ -369,7 +354,7 @@ int handle_read_from_file_section(){
 
     evaluate:
     status = write_string_field(fd_write, MSG_READ_FROM_FILE_SECTION);
-    if(status != SUCCESS) goto clean_up;
+    if(status != SUCCESS) goto finish;
 
     if(valid_data) {
         unsigned int total_offset = sect_header.sect_offset+offset;
@@ -379,27 +364,81 @@ int handle_read_from_file_section(){
         status = write_string_field(fd_write, MSG_ERROR);
     }
 
-    clean_up:
-    if(status != SUCCESS)
-        printf("%s\n%s",MSG_ERROR, select_error_message(status));
+    finish:
+    if(status != SUCCESS) {
+        printf("%s\n%s", MSG_ERROR, select_error_message(status));
+    }
     return status;
 }
 
-int map_sf_file_section(char * file_name, int size, int offset, char * data){
+int handle_read_from_logical_offset() {
     int status = SUCCESS;
-    int fd_mmf = open(file_name, O_RDONLY);
-    if(fd_mmf == -1) {
-        status = ERR_OPENING_FILE;
-        goto clean_up;
+    unsigned int logical_offset;
+    unsigned int no_of_bytes;
+    sf_header_t mmf_header;
+    sect_header_t sect_header;
+
+    status = read_number_field(fd_read, &logical_offset);
+    if (status != SUCCESS) goto finish;
+
+    status = read_number_field(fd_read, &no_of_bytes);
+    if (status != SUCCESS) goto finish;
+
+    memcpy(&mmf_header, mmf_data, sizeof(sf_header_t));
+
+    /* check that the mapped file has a valid sf format */
+    if (!is_valid_sf_format(mmf_header)) {
+        status = ERR_INVALID_SF_FILE_FORMAT;
+        goto finish;
     }
-    mmf_data = (char *)mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd_mmf, offset);
-    if(mmf_data == MAP_FAILED) {
-        status = ERR_CREATING_MAPPING;
-        goto clean_up;
+    /* compute the address in the sf file using the given logical address */
+    unsigned int no_of_pages = logical_offset / PAGE_SIZE;
+    unsigned int byte_offset = 0;
+    unsigned int sect_header_start = sizeof(sf_header_t);
+    int page_count = 0;
+    int sect_start_page_index = 0;
+    int i=0;
+    do{
+        memcpy(&sect_header, mmf_data + sect_header_start, sizeof(sect_header_t));
+        if (!is_valid_section_header(sect_header)) {
+            status = ERR_INVALID_SF_FILE_FORMAT;
+            goto finish;
+        }
+        printf("size = %d offset = %d\n",sect_header.sect_size,sect_header.sect_offset);
+        sect_start_page_index = page_count;
+        page_count += sect_header.sect_size / PAGE_SIZE;
+        if (sect_header.sect_size % PAGE_SIZE > 0)
+            page_count++;
+        sect_header_start += sizeof(sect_header_t);
+        i++;
+    }while(i < mmf_header.no_of_sections && page_count < no_of_pages);
+
+    if (page_count < no_of_pages) {
+        status = ERR_READING_FROM_LOGICAL_OFFSET;
+        goto finish;
     }
-    clean_up:
-    if(fd_mmf > 0)
-        close(fd_mmf);
+    byte_offset = logical_offset - sect_start_page_index * PAGE_SIZE;
+    //printf("start address = %d end address %d\n",sect_header.sect_offset,sect_header.sect_offset+sect_header.sect_size);
+    /* validate byte_offset and nr of read bytes */
+    bool valid_data = true;
+    if (byte_offset > sect_header.sect_offset + sect_header.sect_size || no_of_bytes > sect_header.sect_size)
+        valid_data = false;
+
+    status = write_string_field(fd_write, MSG_READ_FROM_LOGICAL_SPACE_OFFSET);
+    if (status != SUCCESS) goto finish;
+
+    if (valid_data) {
+        memcpy(sh_mem_data, mmf_data + sect_header.sect_offset + byte_offset, no_of_bytes);
+        status = write_string_field(fd_write, MSG_SUCCESS);
+    } else {
+        printf("not valid\n");
+        status = write_string_field(fd_write, MSG_ERROR);
+    }
+    finish:
+    if(status != SUCCESS) {
+        printf("%s\n%s", MSG_ERROR, select_error_message(status));
+    }
+
     return status;
 }
 
@@ -497,21 +536,6 @@ int read_number_field(int fd, unsigned int * param){
     return SUCCESS;
 }
 
-char * select_error_message(return_status_t status){
-    switch (status) {
-        case ERR_CREATING_PIPE: return "cannot create pipe";
-        case ERR_OPENING_PIPE: return "cannot open pipe";
-        case ERR_READING_FROM_PIPE: return "cannot read from request pipe";
-        case ERR_WRITING_TO_PIPE: return "cannot write to response pipe";
-        case ERR_CREATING_SHARED_MEMORY: return "cannot create shared memory";
-        case ERR_CREATING_MAPPING: return "cannot map shared memory";
-        case ERR_WRITING_TO_SHARED_MEMORY: return "cannot write to shared memory";
-        case ERR_OPENING_FILE: return "cannot open the file";
-        case ERR_READING_FROM_FILE_SECTION: return "cannot read from file section";
-        default: return "";
-    }
-}
-
 bool is_valid_sf_format(sf_header_t sf_header) {
     /* check magic number = MAGIC_NR */
     char magic_ext[5];
@@ -537,4 +561,21 @@ bool is_valid_section_header(sect_header_t sect_header) {
         }
     }
     return false;
+}
+
+char * select_error_message(return_status_t status){
+    switch (status) {
+        case ERR_CREATING_PIPE: return "cannot create pipe";
+        case ERR_OPENING_PIPE: return "cannot open pipe";
+        case ERR_READING_FROM_PIPE: return "cannot read from request pipe";
+        case ERR_WRITING_TO_PIPE: return "cannot write to response pipe";
+        case ERR_CREATING_SHARED_MEMORY: return "cannot create shared memory";
+        case ERR_CREATING_MAPPING: return "cannot map shared memory";
+        case ERR_WRITING_TO_SHARED_MEMORY: return "cannot write to shared memory";
+        case ERR_OPENING_FILE: return "cannot open the file";
+        case ERR_READING_FROM_FILE_SECTION: return "cannot read from file section";
+        case ERR_READING_FROM_LOGICAL_OFFSET: return "cannot read from logical offset";
+        case ERR_INVALID_SF_FILE_FORMAT: return "invalid sf file format";
+        default: return "";
+    }
 }
