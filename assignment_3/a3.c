@@ -66,9 +66,9 @@ int handle_ping_request();
 int handle_create_shared_memory_request();
 int handle_write_to_shared_memory_request();
 int handle_map_file_request();
-int handle_read_from_file_offset();
-int handle_read_from_file_section();
-int handle_read_from_logical_offset();
+int handle_read_from_file_offset_request();
+int handle_read_from_file_section_request();
+int handle_read_from_logical_offset_request();
 
 int write_string_field(int fd, char * param);
 int write_number_field(int fd, unsigned int param);
@@ -153,11 +153,11 @@ int read_and_handle_request(){
     }else if(strncmp(request_name, MSG_MAP_FILE, strlen(MSG_MAP_FILE)) == 0) {
         handle_map_file_request();
     }else if(strncmp(request_name, MSG_READ_FROM_FILE_OFFSET, strlen(MSG_READ_FROM_FILE_OFFSET)) == 0) {
-        handle_read_from_file_offset();
+        handle_read_from_file_offset_request();
     }else if(strncmp(request_name, MSG_READ_FROM_FILE_SECTION, strlen(MSG_READ_FROM_FILE_SECTION)) == 0) {
-        handle_read_from_file_section();
+        handle_read_from_file_section_request();
     }else if(strncmp(request_name, MSG_READ_FROM_LOGICAL_SPACE_OFFSET, strlen(MSG_READ_FROM_LOGICAL_SPACE_OFFSET)) == 0) {
-        handle_read_from_logical_offset();
+        handle_read_from_logical_offset_request();
     }else if(strncmp(request_name, MSG_EXIT, strlen(MSG_EXIT)) == 0)
         exit_loop = true;
     finish:
@@ -266,7 +266,7 @@ int handle_map_file_request(){
     return status;
 }
 
-int handle_read_from_file_offset(){
+int handle_read_from_file_offset_request(){
     int status = SUCCESS;
     unsigned int offset;
     unsigned int no_of_bytes;
@@ -304,7 +304,7 @@ int handle_read_from_file_offset(){
     return status;
 }
 
-int handle_read_from_file_section(){
+int handle_read_from_file_section_request(){
     int status = SUCCESS;
     unsigned int section_nr;
     unsigned int offset;
@@ -372,7 +372,7 @@ int handle_read_from_file_section(){
     return status;
 }
 
-int handle_read_from_logical_offset() {
+int handle_read_from_logical_offset_request() {
     int status = SUCCESS;
     unsigned int logical_offset;
     unsigned int no_of_bytes;
@@ -404,21 +404,26 @@ int handle_read_from_logical_offset() {
             status = ERR_INVALID_SF_FILE_FORMAT;
             goto finish;
         }
+        /* save the address of teh start of the section */
         sect_start = curr_offset;
+        /* allocate the necessary number of pages for the section */
         curr_offset += (sect_header.sect_size / PAGE_SIZE) * PAGE_SIZE;
+        /* if there are remaining bytes, allocate a whole page for them. It is necessary because the memory can only be allocated as units of fixed sized pages. */
         if (sect_header.sect_size % PAGE_SIZE > 0)
             curr_offset+=PAGE_SIZE;
+        /* go to next section in the header of the sf file */
         sect_header_start += sizeof(sect_header_t);
         i++;
     }while(i < mmf_header.no_of_sections && curr_offset < logical_offset);
 
+    /* Check if there are less pages than the size of the logical address */
     if (curr_offset < logical_offset) {
         status = ERR_READING_FROM_LOGICAL_OFFSET;
         goto finish;
     }
-    /* calculate the offset from the start of the section */
+    /* calculate the offset from the start of the section = logical_offset - start_of_section */
     unsigned int byte_offset = logical_offset - sect_start;
-    /* validate byte_offset and nr of read bytes */
+    /* validate that byte_offset is within the size limits of the section and together with the nr of read bytes it doesn't exceed the size */
     bool valid_data = true;
     if (byte_offset > sect_header.sect_size || byte_offset + no_of_bytes > sect_header.sect_size)
         valid_data = false;
@@ -442,13 +447,16 @@ int handle_read_from_logical_offset() {
 
 int map_sf_file(char * file_name) {
     int status = SUCCESS;
+    /* open the file */
     int fd_mmf = open(file_name, O_RDONLY);
     if(fd_mmf == -1) {
         status = ERR_OPENING_FILE;
         goto clean_up;
     }
+    /* get the size of the mapped file */
     mmf_size = lseek(fd_mmf, 0, SEEK_END);
     lseek(fd_mmf, 0, SEEK_SET);
+    /* map the file to an address in the program's VAS */
     mmf_data = (char *)mmap(NULL, mmf_size, PROT_READ, MAP_PRIVATE, fd_mmf, 0);
     if(mmf_data == MAP_FAILED) {
         status = ERR_CREATING_MAPPING;
